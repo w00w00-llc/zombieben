@@ -1,0 +1,27 @@
+---
+name: Example Workflow
+
+inputs:
+  prompt:
+    description: The task to perform
+    required: true
+    type: string
+
+worktree:
+  action: create
+
+steps:
+  - uses: zombieben.create_worktree
+  - name: Implement
+    prompt: >
+      Execute the following task: ${{ inputs.prompt }}
+  - name: Verify
+    prompt: >
+      Run the test suite and verify that all tests pass.
+    retry_policy:
+      max_attempts: 3
+      retry_prompt: >
+        Fix the failing tests
+  - name: Publish
+    prompt: >
+      Create a pull request with the changes.

@@ -1,0 +1,36 @@
+{
+  "name": "zombieben",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CLI tool for zombieben workflows",
+  "bin": {
+    "zombieben": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "scaffold"
+  ],
+  "scripts": {
+    "build": "tsc && tsc-alias",
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@slack/socket-mode": "^2.0.5",
+    "@slack/web-api": "^7.14.1",
+    "commander": "^13.1.0",
+    "js-yaml": "^4.1.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.13.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "eslint": "^10.0.2",
+    "tsc-alias": "^1.8.16",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.56.1",
+    "vitest": "^4.0.18"
+  }
+}

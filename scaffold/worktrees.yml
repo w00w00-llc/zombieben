@@ -1,0 +1,22 @@
+---
+# Worktree setup configuration.
+
+# Setup steps for the worktree.
+# Whenever you use `zombieben.create_worktree` in a workflow, ZombieBen
+# will pull the latest version of your main repo, create a new worktree,
+# create a new branch, then run the steps in this file to configure the 
+# worktree to be able to run independently of other worktrees on the
+# machine.
+setup_steps:
+  - name: (example step) Install dependencies
+    prompt: >
+      Install all project dependencies
+
+# Events to clean up the worktree on
+cleanup_on:
+  # Manual cleanup event - allows users to request the worktree to be cleaned
+  # up through any triggerable event - Slack messages, ZomebieBen's TUI chat, 
+  # etc
+  - manual_cleanup:
+  - pull_request:
+    state: closed
