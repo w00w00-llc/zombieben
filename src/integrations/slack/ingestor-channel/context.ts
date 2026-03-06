@@ -1,4 +1,4 @@
-import { createSlackWebClient } from "@/integrations/slack/index.js";
+import { createSlackWebClient } from "../web-client.js";
 
 export interface SlackThreadMessage {
   user: string;

@@ -8,7 +8,7 @@ vi.mock("../../../util/logger.js", () => ({
   log: { info: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock("../../../integrations/slack/index.js", () => ({
+vi.mock("../web-client.js", () => ({
   createSlackWebClient: vi.fn().mockReturnValue({
     auth: {
       test: vi.fn().mockResolvedValue({ user_id: "U_BOT" }),
@@ -137,7 +137,7 @@ describe("SlackSocketListener", () => {
 
   it("populates trigger.context for threaded messages", async () => {
     const threadContext = [
-      { user: "U1", timestamp: "1000.0", text: "earlier message" },
+      { user: "U1", ts: "1000.0", text: "earlier message" },
     ];
     mockFetchContext.mockResolvedValue(threadContext);
 

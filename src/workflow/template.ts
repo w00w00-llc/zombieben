@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { TriggerResponder } from "@/trigger/responder.js";
+import type { TriggerResponder } from "@/responder/responder.js";
 
 // --- Template context ---
 

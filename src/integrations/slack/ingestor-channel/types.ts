@@ -1,6 +1,13 @@
 import type { Trigger } from "@/ingestor/trigger.js";
-import type { SlackPayload } from "@/integrations/slack/types.js";
 import type { SlackThreadMessage } from "./context.js";
+
+export interface SlackPayload {
+  channel: string;
+  ts: string;
+  thread_ts?: string;
+  user: string;
+  text: string;
+}
 
 export interface SlackContext {
   allThreadMessages: SlackThreadMessage[];

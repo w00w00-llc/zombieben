@@ -38,6 +38,7 @@ export function parseWorkflow(yamlContent: string): WorkflowDef {
 
   return {
     name: raw.name as string,
+    ...(raw.confirmation_required === true ? { confirmation_required: true } : {}),
     triggers: raw.triggers ? parseTriggers(raw.triggers) : undefined,
     worktree: raw.worktree ? parseWorktreeConfig(raw.worktree) : undefined,
     inputs: raw.inputs ? parseInputs(raw.inputs as Record<string, unknown>) : undefined,

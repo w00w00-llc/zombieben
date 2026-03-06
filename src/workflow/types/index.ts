@@ -3,6 +3,7 @@
 
 export interface WorkflowDef {
   name: string;
+  confirmation_required?: boolean;
   triggers?: WorkflowTriggers;
   worktree?: WorktreeConfig;
   inputs?: Record<string, WorkflowInput>;

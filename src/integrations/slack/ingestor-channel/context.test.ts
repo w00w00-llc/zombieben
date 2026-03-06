@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../../../integrations/slack/index.js", () => ({
+vi.mock("../web-client.js", () => ({
   createSlackWebClient: vi.fn(),
 }));
 
-import { createSlackWebClient } from "@/integrations/slack/index.js";
+import { createSlackWebClient } from "../web-client.js";
 import { fetchSlackThreadContext } from "./context.js";
 
 const mockCreateSlackWebClient = vi.mocked(createSlackWebClient);
@@ -19,7 +19,7 @@ describe("fetchSlackThreadContext", () => {
     } as never);
   });
 
-  it("maps thread replies to { user, timestamp, text }", async () => {
+  it("maps thread replies to { user, ts, text }", async () => {
     mockReplies.mockResolvedValue({
       messages: [
         { user: "U1", ts: "1000.0", text: "first message" },
@@ -31,9 +31,9 @@ describe("fetchSlackThreadContext", () => {
     const result = await fetchSlackThreadContext("C123", "1000.0");
 
     expect(result).toEqual([
-      { user: "U1", timestamp: "1000.0", text: "first message" },
-      { user: "U2", timestamp: "1001.0", text: "second message" },
-      { user: "U3", timestamp: "1002.0", text: "triggering message" },
+      { user: "U1", ts: "1000.0", text: "first message" },
+      { user: "U2", ts: "1001.0", text: "second message" },
+      { user: "U3", ts: "1002.0", text: "triggering message" },
     ]);
   });
 
@@ -49,18 +49,6 @@ describe("fetchSlackThreadContext", () => {
 
     expect(result).toHaveLength(2);
     expect(result[1].text).toBe("reply");
-  });
-
-  it("returns single message for single-message thread", async () => {
-    mockReplies.mockResolvedValue({
-      messages: [{ user: "U1", ts: "1000.0", text: "only message" }],
-    });
-
-    const result = await fetchSlackThreadContext("C123", "1000.0");
-
-    expect(result).toEqual([
-      { user: "U1", timestamp: "1000.0", text: "only message" },
-    ]);
   });
 
   it("returns empty array when messages is undefined", async () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Trigger } from "@/ingestor/trigger.js";
-import type { TriggerResponder } from "@/trigger/responder.js";
+import type { TriggerResponder } from "@/responder/responder.js";
+import type { IngestorChannel } from "@/ingestor/ingestor-channel.js";
 
 const mockResponder: TriggerResponder = {
   send: vi.fn(),
@@ -14,27 +15,34 @@ const mockNotifierResponder: TriggerResponder = {
   waitForReply: vi.fn(),
 };
 
-vi.mock("../integrations/registry.js", () => ({
-  getPlugin: vi.fn(),
-}));
-
-vi.mock("../integrations/slack/notifier-responder.js", () => ({
+vi.mock("../integrations/slack/notifier-responder/index.js", () => ({
   createSlackNotifierResponder: vi.fn(),
 }));
 
 import { resolveResponders } from "./resolve.js";
-import { getPlugin } from "@/integrations/registry.js";
-import { createSlackNotifierResponder } from "@/integrations/slack/notifier-responder.js";
+import { createSlackNotifierResponder } from "@/integrations/slack/notifier-responder/index.js";
 
-const mockedGetPlugin = vi.mocked(getPlugin);
 const mockedCreateNotifier = vi.mocked(createSlackNotifierResponder);
 
 function makeTrigger(overrides: Partial<Trigger> = {}): Trigger {
   return {
     source: "slack_webhook",
     id: "slack-C123-1234.5678",
+    groupKeys: ["slack:C123:1234.5678"],
     timestamp: "2026-03-05T00:00:00Z",
     raw_payload: { channel: "C123", ts: "1234.5678", user: "U456", text: "hello" },
+    ...overrides,
+  };
+}
+
+function makeSlackChannel(overrides: Partial<IngestorChannel> = {}): IngestorChannel {
+  return {
+    name: "slack",
+    isEnabled: () => true,
+    startListener: async () => {},
+    stopListener: async () => {},
+    getPrimaryResponder: () => mockResponder,
+    getChannelKey: () => "slack:C123",
     ...overrides,
   };
 }
@@ -42,21 +50,12 @@ function makeTrigger(overrides: Partial<Trigger> = {}): Trigger {
 describe("resolveResponders", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedGetPlugin.mockReturnValue(undefined);
     mockedCreateNotifier.mockReturnValue(null);
   });
 
   it("returns primary responder for slack trigger", () => {
-    mockedGetPlugin.mockReturnValue({
-      id: "slack",
-      name: "Slack",
-      responder: {
-        createResponder: () => mockResponder,
-        getChannelKey: () => "slack:C123",
-      },
-    });
-
-    const result = resolveResponders(makeTrigger());
+    const channels = [makeSlackChannel()];
+    const result = resolveResponders(makeTrigger(), channels);
 
     expect(result.responders).toHaveLength(1);
     expect(result.responders[0].channelKey).toBe("slack:C123");
@@ -65,20 +64,13 @@ describe("resolveResponders", () => {
   });
 
   it("adds notifier when notification channel is configured", () => {
-    mockedGetPlugin.mockReturnValue({
-      id: "slack",
-      name: "Slack",
-      responder: {
-        createResponder: () => mockResponder,
-        getChannelKey: () => "slack:C123",
-      },
-    });
+    const channels = [makeSlackChannel()];
     mockedCreateNotifier.mockReturnValue({
       channelKey: "slack:C999",
       responder: mockNotifierResponder,
     });
 
-    const result = resolveResponders(makeTrigger());
+    const result = resolveResponders(makeTrigger(), channels);
 
     expect(result.responders).toHaveLength(2);
     expect(result.responders[0].channelKey).toBe("slack:C123");
@@ -88,20 +80,13 @@ describe("resolveResponders", () => {
   });
 
   it("deduplicates when primary and notifier target the same channel", () => {
-    mockedGetPlugin.mockReturnValue({
-      id: "slack",
-      name: "Slack",
-      responder: {
-        createResponder: () => mockResponder,
-        getChannelKey: () => "slack:C123",
-      },
-    });
+    const channels = [makeSlackChannel()];
     mockedCreateNotifier.mockReturnValue({
       channelKey: "slack:C123",
       responder: mockNotifierResponder,
     });
 
-    const result = resolveResponders(makeTrigger());
+    const result = resolveResponders(makeTrigger(), channels);
 
     expect(result.responders).toHaveLength(1);
     expect(result.responders[0].channelKey).toBe("slack:C123");
@@ -110,17 +95,13 @@ describe("resolveResponders", () => {
     expect(result.responders[0].responder).toBe(mockResponder);
   });
 
-  it("returns only notifier when plugin has no responder adapter", () => {
-    mockedGetPlugin.mockReturnValue({
-      id: "slack",
-      name: "Slack",
-    });
+  it("returns only notifier when channel has no matching name", () => {
     mockedCreateNotifier.mockReturnValue({
       channelKey: "slack:C999",
       responder: mockNotifierResponder,
     });
 
-    const result = resolveResponders(makeTrigger());
+    const result = resolveResponders(makeTrigger(), []);
 
     expect(result.responders).toHaveLength(1);
     expect(result.responders[0].channelKey).toBe("slack:C999");
@@ -128,7 +109,7 @@ describe("resolveResponders", () => {
   });
 
   it("returns empty responders when nothing is configured", () => {
-    const result = resolveResponders(makeTrigger({ source: "unknown_source" }));
+    const result = resolveResponders(makeTrigger({ source: "unknown_source" }), []);
 
     expect(result.responders).toHaveLength(0);
     expect(result.trigger.source).toBe("unknown_source");

@@ -1,5 +1,5 @@
 import type { Trigger } from "@/ingestor/trigger.js";
-import type { TriggerResponder } from "@/trigger/responder.js";
+import type { TriggerResponder } from "@/responder/responder.js";
 
 export type ResponderRole = "primary" | "notifier";
 

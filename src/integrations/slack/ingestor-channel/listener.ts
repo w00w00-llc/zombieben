@@ -1,5 +1,5 @@
 import { SocketModeClient } from "@slack/socket-mode";
-import { createSlackWebClient } from "@/integrations/slack/index.js";
+import { createSlackWebClient } from "../web-client.js";
 import type { Ingestor } from "@/ingestor/ingestor.js";
 import { transformSlackEvent } from "./transform.js";
 import { fetchSlackThreadContext } from "./context.js";

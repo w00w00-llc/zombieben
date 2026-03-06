@@ -1,28 +1,8 @@
-import { WebClient } from "@slack/web-api";
-import type { TriggerResponder } from "@/trigger/responder.js";
-import type { Trigger } from "@/ingestor/trigger.js";
-import type {
-  IntegrationPlugin,
-  ResponderAdapter,
-} from "@/integrations/types.js";
-import { isSlackTrigger } from "@/ingestor/channels/slack/types.js";
-import { getIntegrationKeys } from "@/util/keys.js";
-
-// --- Responder ---
+import type { WebClient } from "@slack/web-api";
+import type { TriggerResponder } from "@/responder/responder.js";
 
 const POLL_INTERVAL_MS = 3_000;
 const REPLY_TIMEOUT_MS = 5 * 60 * 1_000;
-
-export function createSlackWebClient(): WebClient {
-  const keys = getIntegrationKeys("slack");
-  const token = keys?.bot_token;
-  if (!token) {
-    throw new Error(
-      "Slack bot token not configured. Run `zombieben chat` and use the setup-slack skill.",
-    );
-  }
-  return new WebClient(token);
-}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -108,29 +88,3 @@ export class SlackResponder implements TriggerResponder {
     return messages[messages.length - 1].ts ?? this.threadTs;
   }
 }
-
-const slackResponderAdapter: ResponderAdapter = {
-  createResponder(trigger: Trigger): TriggerResponder {
-    if (!isSlackTrigger(trigger)) {
-      throw new Error(`Expected slack_webhook trigger, got ${trigger.source}`);
-    }
-    const threadTs = trigger.raw_payload.thread_ts ?? trigger.raw_payload.ts;
-    const client = createSlackWebClient();
-    return new SlackResponder(client, trigger.raw_payload.channel, threadTs);
-  },
-
-  getChannelKey(trigger: Trigger): string {
-    if (!isSlackTrigger(trigger)) {
-      throw new Error(`Expected slack_webhook trigger, got ${trigger.source}`);
-    }
-    return `slack:${trigger.raw_payload.channel}`;
-  },
-};
-
-// --- Plugin ---
-
-export const slackPlugin: IntegrationPlugin = {
-  id: "slack",
-  name: "Slack",
-  responder: slackResponderAdapter,
-};

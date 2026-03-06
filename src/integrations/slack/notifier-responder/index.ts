@@ -1,6 +1,6 @@
 import type { WebClient } from "@slack/web-api";
-import type { TriggerResponder } from "@/trigger/responder.js";
-import { createSlackWebClient } from "./index.js";
+import type { TriggerResponder } from "@/responder/responder.js";
+import { createSlackWebClient } from "../web-client.js";
 import { getIntegrationKeys } from "@/util/keys.js";
 
 export class SlackNotifierResponder implements TriggerResponder {

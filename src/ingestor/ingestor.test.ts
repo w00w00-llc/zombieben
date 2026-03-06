@@ -16,6 +16,7 @@ function makeTrigger(id = "slack-C123-1234.5678"): Trigger {
   return {
     source: "slack_webhook",
     id,
+    groupKeys: ["slack:C123:1234.5678"],
     timestamp: new Date().toISOString(),
     raw_payload: { channel: "C123", ts: "1234.5678", user: "U456", text: "hello" },
   };
@@ -32,6 +33,7 @@ describe("Ingestor", () => {
     onTrigger = vi.fn().mockResolvedValue(undefined);
     ingestor = new Ingestor({
       dedupStore,
+      channels: [],
       onTrigger: onTrigger as unknown as (result: ResponderSet) => Promise<void>,
     });
   });

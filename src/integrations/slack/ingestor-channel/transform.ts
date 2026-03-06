@@ -1,5 +1,4 @@
-import type { SlackPayload } from "@/integrations/slack/types.js";
-import type { SlackTrigger } from "./types.js";
+import type { SlackPayload, SlackTrigger } from "./types.js";
 
 interface SlackEvent extends SlackPayload {
   bot_id?: string;
@@ -14,6 +13,7 @@ export function transformSlackEvent(raw: unknown): SlackTrigger | null {
   return {
     source: "slack_webhook",
     id: `slack-${event.channel}-${event.ts}`,
+    groupKeys: [`slack:${event.channel}:${event.thread_ts ?? event.ts}`],
     timestamp: new Date(parseFloat(event.ts) * 1000).toISOString(),
     raw_payload: event,
   };

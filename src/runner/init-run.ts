@@ -54,7 +54,7 @@ export function initRun(
   const triggerPath = path.join(wtDir, "trigger.json");
   fs.writeFileSync(
     triggerPath,
-    JSON.stringify({ id: trigger.id, source: trigger.source }, null, 2),
+    JSON.stringify({ id: trigger.id, source: trigger.source, groupKeys: trigger.groupKeys }, null, 2),
   );
 
   log.info(

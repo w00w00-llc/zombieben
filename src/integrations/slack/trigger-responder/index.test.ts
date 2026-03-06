@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { SlackResponder } from "./index.js";
 import type { WebClient } from "@slack/web-api";
 
-vi.mock("../../util/keys.js", () => ({
+vi.mock("../../../util/keys.js", () => ({
   getIntegrationKeys: (id: string) => {
     if (id === "slack") return { bot_token: "xoxb-test-token" };
     return undefined;

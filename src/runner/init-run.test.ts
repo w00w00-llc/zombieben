@@ -49,6 +49,7 @@ describe("initRun", () => {
     const trigger: Trigger = {
       source: "slack",
       id: "slack-C123-1234.5678",
+      groupKeys: ["slack:C123:1234.5678"],
       timestamp: new Date().toISOString(),
       raw_payload: {},
     };
@@ -92,6 +93,7 @@ describe("initRun", () => {
     const trigger: Trigger = {
       source: "slack",
       id: "slack-C123-999",
+      groupKeys: ["slack:C123:999"],
       timestamp: new Date().toISOString(),
       raw_payload: {},
     };

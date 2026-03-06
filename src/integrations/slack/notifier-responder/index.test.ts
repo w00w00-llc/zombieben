@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { SlackNotifierResponder, createSlackNotifierResponder } from "./notifier-responder.js";
+import { SlackNotifierResponder, createSlackNotifierResponder } from "./index.js";
 
 const mockPostMessage = vi.fn().mockResolvedValue({});
 
-vi.mock("./index.js", () => ({
+vi.mock("../web-client.js", () => ({
   createSlackWebClient: vi.fn(() => ({
     chat: { postMessage: mockPostMessage },
   })),
 }));
 
-vi.mock("../../util/keys.js", () => ({
+vi.mock("../../../util/keys.js", () => ({
   getIntegrationKeys: vi.fn(),
 }));
 

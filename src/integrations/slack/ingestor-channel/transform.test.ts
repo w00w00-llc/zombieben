@@ -14,12 +14,26 @@ describe("transformSlackEvent", () => {
     expect(result!.source).toBe("slack_webhook");
     expect(result!.id).toBe("slack-C123-1700000000.000000");
     expect(result!.timestamp).toBe(new Date(1700000000000).toISOString());
+    expect(result!.groupKeys).toEqual(["slack:C123:1700000000.000000"]);
     expect(result!.raw_payload).toEqual({
       channel: "C123",
       ts: "1700000000.000000",
       user: "U456",
       text: "hello",
     });
+  });
+
+  it("uses thread_ts for groupKeys when in a thread", () => {
+    const result = transformSlackEvent({
+      channel: "C123",
+      ts: "1700000001.000000",
+      thread_ts: "1700000000.000000",
+      user: "U456",
+      text: "reply in thread",
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.groupKeys).toEqual(["slack:C123:1700000000.000000"]);
   });
 
   it("returns null for bot messages (bot_id)", () => {
