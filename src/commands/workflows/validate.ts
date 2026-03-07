@@ -7,7 +7,11 @@ import {
   parseWorktreesConfig,
   validateWorkflow,
   validateWorktreesConfig,
-} from "@/workflow/parser.js";
+} from "@/engine/workflow-parser.js";
+import {
+  collectRequiredIntegrations,
+  checkRequiredIntegrations,
+} from "@/engine/integration-checker.js";
 
 export function registerWorkflowsValidateCommand(parent: Command): void {
   parent
@@ -70,6 +74,19 @@ export function registerWorkflowsValidateCommand(parent: Command): void {
               }
             } else {
               console.log(`${file}: valid`);
+
+              // Check integration availability (warning only)
+              const required = collectRequiredIntegrations(workflow);
+              if (required.size > 0) {
+                const check = checkRequiredIntegrations(required);
+                if (!check.ok) {
+                  for (const name of check.missing) {
+                    console.warn(
+                      `  Warning: requires integration "${name}" which is not configured`,
+                    );
+                  }
+                }
+              }
             }
           } catch (err) {
             hasErrors = true;
