@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { SlackResponder } from "./index.js";
+import { SlackResponder, parseChoice } from "./index.js";
 import type { WebClient } from "@slack/web-api";
 
 vi.mock("../../../util/keys.js", () => ({
@@ -163,5 +163,39 @@ describe("SlackResponder", () => {
       expect(result).toBe("reply");
       expect(mockClient.chat.postMessage).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("parseChoice", () => {
+  const options = ["Yes, run it", "No, cancel"];
+
+  it("parses bare number", () => {
+    expect(parseChoice("1", options)).toBe(0);
+    expect(parseChoice("2", options)).toBe(1);
+  });
+
+  it("parses number with surrounding text", () => {
+    expect(parseChoice("<@U0AGRL1EBMX> 1", options)).toBe(0);
+  });
+
+  it("matches option text case-insensitively", () => {
+    expect(parseChoice("yes, run it", options)).toBe(0);
+    expect(parseChoice("no, cancel", options)).toBe(1);
+  });
+
+  it("matches partial text (reply is substring of option)", () => {
+    expect(parseChoice("yes", options)).toBe(0);
+    expect(parseChoice("cancel", options)).toBe(1);
+  });
+
+  it("handles @mention prefix with natural text", () => {
+    expect(parseChoice("<@U0AGRL1EBMX> yes, run it", options)).toBe(0);
+    expect(parseChoice("<@U0AGRL1EBMX> no", options)).toBe(1);
+  });
+
+  it("returns -1 for unrecognized input", () => {
+    expect(parseChoice("maybe", options)).toBe(-1);
+    expect(parseChoice("0", options)).toBe(-1);
+    expect(parseChoice("3", options)).toBe(-1);
   });
 });
