@@ -6,9 +6,10 @@ Connect ZombieBen to Linear for fetching issues in workflow steps.
 
 The user needs a Linear **API key**. If they don't have one:
 
-1. Go to https://linear.app/settings/api and click **Create key**.
-2. Give it a label (e.g. "ZombieBen").
-3. Copy the key (`lin_api_...`).
+1. Go to **Settings → Account → Security & Access** (e.g. `https://linear.app/<workspace>/settings/account/security`).
+2. Under **API**, click **Create key**.
+3. Give it a label (e.g. "ZombieBen").
+4. Copy the key (`lin_api_...`).
 
 ## Setup Flow
 
