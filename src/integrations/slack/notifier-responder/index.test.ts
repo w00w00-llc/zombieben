@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { SlackNotifierResponder, createSlackNotifierResponder } from "./index.js";
+import type { TriageOutcome } from "@/triage/types.js";
 
 const mockPostMessage = vi.fn().mockResolvedValue({});
 
@@ -33,19 +34,30 @@ describe("SlackNotifierResponder", () => {
     });
   });
 
-  it("promptChoice() throws", async () => {
+  it("sendOutcome() posts mrkdwn block payload", async () => {
     const responder = new SlackNotifierResponder(client, "C999");
-    await expect(responder.promptChoice("pick", ["a", "b"])).rejects.toThrow(
-      "not supported",
-    );
+    const outcome: TriageOutcome = {
+      kind: "immediate_response",
+      message: "ok",
+      reasoning: "test",
+    };
+    await responder.sendOutcome(outcome);
+
+    expect(mockPostMessage).toHaveBeenCalledWith({
+      channel: "C999",
+      text: "Triage: immediate_response\nok",
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "Triage: immediate_response\nok",
+          },
+        },
+      ],
+    });
   });
 
-  it("waitForReply() throws", async () => {
-    const responder = new SlackNotifierResponder(client, "C999");
-    await expect(responder.waitForReply("waiting")).rejects.toThrow(
-      "not supported",
-    );
-  });
 });
 
 describe("createSlackNotifierResponder", () => {

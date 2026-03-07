@@ -8,13 +8,13 @@ import { log } from "@/util/logger.js";
 export interface IngestorOptions {
   dedupStore: DedupStore;
   channels: readonly IngestorChannel[];
-  onTrigger: (result: ResponderSet) => Promise<void>;
+  onTrigger: (result: ResponderSet) => void;
 }
 
 export class Ingestor {
   private dedupStore: DedupStore;
   private channels: readonly IngestorChannel[];
-  private onTrigger: (result: ResponderSet) => Promise<void>;
+  private onTrigger: (result: ResponderSet) => void;
 
   constructor(opts: IngestorOptions) {
     this.dedupStore = opts.dedupStore;
@@ -22,7 +22,7 @@ export class Ingestor {
     this.onTrigger = opts.onTrigger;
   }
 
-  async submit(trigger: Trigger): Promise<void> {
+  submit(trigger: Trigger): void {
     if (this.dedupStore.has(trigger.id)) {
       log.info(`Duplicate trigger skipped: ${trigger.id}`);
       return;
@@ -30,6 +30,6 @@ export class Ingestor {
 
     this.dedupStore.add(trigger.id);
     const result = resolveResponders(trigger, this.channels);
-    await this.onTrigger(result);
+    this.onTrigger(result);
   }
 }

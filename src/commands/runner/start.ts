@@ -9,7 +9,8 @@ import {
   reposDir,
 } from "@/util/paths.js";
 import { log } from "@/util/logger.js";
-import { ZombieBenRunner } from "@/zombieben-runner.js";
+import { ZombieBenRunner } from "@/runner/index.js";
+import { ClaudeCodingAgent } from "@/codingagents/index.js";
 
 const PID_FILE = path.join(zombiebenDir(), "runner.pid");
 
@@ -68,7 +69,7 @@ function startDaemon(): void {
 async function startForeground(): Promise<void> {
   log.tee = true;
 
-  const runner = new ZombieBenRunner();
+  const runner = new ZombieBenRunner(new ClaudeCodingAgent());
 
   fs.writeFileSync(PID_FILE, String(process.pid));
 

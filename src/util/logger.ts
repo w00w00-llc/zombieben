@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { runnerLogPath } from "./paths.js";
 
 export interface Logger {
+  debug(message: string): void;
   info(message: string): void;
   warn(message: string): void;
   error(message: string): void;
@@ -18,6 +19,7 @@ export function createLogger(opts: CreateLoggerOpts = {}): Logger {
   let tee = opts.tee ?? false;
 
   const colors: Record<string, string> = {
+    DEBUG: "\x1b[90m",  // gray
     INFO: "\x1b[36m",   // cyan
     WARN: "\x1b[33m",   // yellow
     ERROR: "\x1b[31m",  // red
@@ -37,6 +39,7 @@ export function createLogger(opts: CreateLoggerOpts = {}): Logger {
   }
 
   return {
+    debug: (message) => write("DEBUG", message),
     info: (message) => write("INFO", message),
     warn: (message) => write("WARN", message),
     error: (message) => write("ERROR", message),

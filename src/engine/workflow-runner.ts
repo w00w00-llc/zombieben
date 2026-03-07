@@ -1,16 +1,151 @@
+import { execFile as execFileCb } from "node:child_process";
 import fs from "node:fs";
-import type { WorkflowDef, WorkflowStepDef } from "@/workflow/types/index.js";
-import type { WorkflowRunState, WorkflowRunStatus } from "@/runner/workflow-run-state.js";
-import type { StepResult, StepRunnerOpts } from "./step-runner.js";
-import { executeStep } from "./step-runner.js";
-import type { TemplateContext } from "@/workflow/template.js";
-import { executeBuiltin } from "./builtins.js";
+import path from "node:path";
+import { promisify } from "node:util";
+import type { WorkflowDef, WorkflowStepDef } from "./workflow-types.js";
+import type {
+  WorkflowRunState,
+  WorkflowRunStatus,
+} from "./workflow-run-state.js";
+import type { TemplateContext } from "./workflow-template.js";
+import type { Logger } from "@/util/logger.js";
+import { shouldAwaitApprovalForPrompt } from "./await-approval.js";
+import type { ScriptStepDef } from "./workflow-types.js";
+import { createTodoMarkdown } from "./todo-generator.js";
+import { EXECUTE_TODOS_SYSTEM_PROMPT } from "./execute-todos-prompt.js";
+import type { CodingAgent } from "@/codingagents/index.js";
+import { resolveIntegrationsForStep } from "./integration-resolver.js";
+
+const execFile = promisify(execFileCb);
+
+export interface StepResult {
+  success: boolean;
+  summary?: string;
+  failures?: string[];
+  artifacts?: string[];
+  todoFullyComplete?: boolean;
+}
+
+export interface StepRunnerOpts {
+  agent: CodingAgent;
+  workingDir: string;
+  artifactsDir: string;
+  dryRun?: boolean;
+  log?: Logger;
+}
+
+export async function executeScriptStep(
+  step: ScriptStepDef,
+  opts: StepRunnerOpts
+): Promise<StepResult> {
+  if (opts.dryRun) {
+    return { success: true, summary: "Dry run — skipped execution" };
+  }
+
+  try {
+    const { stdout } = await execFile("sh", ["-c", step.runs], {
+      cwd: opts.workingDir,
+      maxBuffer: 50 * 1024 * 1024,
+    });
+    return { success: true, summary: stdout.trim() || "Script completed successfully" };
+  } catch (err) {
+    const error = err as Error & { stdout?: string; stderr?: string };
+    return {
+      success: false,
+      summary: error.stderr?.trim() || error.message,
+    };
+  }
+}
+
+export async function executeWorkflowSlice(
+  workflow: WorkflowDef,
+  stepIndex: number,
+  context: TemplateContext,
+  opts: StepRunnerOpts
+): Promise<StepResult> {
+  const step = workflow.steps[stepIndex];
+
+  if (step.kind === "script") {
+    return executeScriptStep(step, opts);
+  }
+
+  const todoPath = path.join(opts.artifactsDir, "TODO.md");
+  fs.mkdirSync(opts.artifactsDir, { recursive: true });
+  if (!fs.existsSync(todoPath)) {
+    // Backward compatibility for runs created before initRun started writing TODO.md.
+    const todo = createTodoMarkdown(workflow, context, stepIndex);
+    fs.writeFileSync(todoPath, todo);
+  }
+
+  if (opts.dryRun) {
+    return { success: true, summary: "Dry run — skipped execution" };
+  }
+
+  const integrations = resolveIntegrationsForStep(step);
+
+  try {
+    const stepLogPrefix = `step-${String(stepIndex).padStart(3, "0")}`;
+    const handle = opts.agent.spawn({
+      prompt: `Execute the steps in ${todoPath}`,
+      systemPrompt: EXECUTE_TODOS_SYSTEM_PROMPT,
+      readonly: false,
+      cwd: opts.workingDir,
+      log: opts.log,
+      outputFormat: "stream-json",
+      stdoutLogPath: path.join(opts.artifactsDir, `${stepLogPrefix}-claude.stdout.log`),
+      stderrLogPath: path.join(opts.artifactsDir, `${stepLogPrefix}-claude.stderr.log`),
+      mcpConfigs: integrations.mcpConfigs,
+      env: integrations.env,
+    });
+    await handle.done;
+  } catch (err) {
+    return {
+      success: false,
+      summary: `Chat command failed: ${(err as Error).message}`,
+    };
+  }
+
+  const result = readExecutionResult(opts.artifactsDir);
+  if (result.todoFullyComplete == null) {
+    result.todoFullyComplete = isMainTodoFullyComplete(todoPath);
+  }
+  return result;
+}
+
+export function readExecutionResult(artifactsDir: string): StepResult {
+  const resultPath = path.join(artifactsDir, "execution_result.json");
+  try {
+    const raw = fs.readFileSync(resultPath, "utf-8");
+    const parsed = JSON.parse(raw) as StepResult;
+    fs.unlinkSync(resultPath);
+    return parsed;
+  } catch {
+    return { success: true, summary: "No execution_result.json found — assumed success" };
+  }
+}
+
+function isMainTodoFullyComplete(todoPath: string): boolean {
+  let content: string;
+  try {
+    content = fs.readFileSync(todoPath, "utf-8");
+  } catch {
+    return false;
+  }
+
+  const mainSection = content.split(/\n#\s+Failure Tasks\b/, 1)[0];
+  const matches = [...mainSection.matchAll(/^\s*-\s\[(.)\]/gm)];
+  if (matches.length === 0) return false;
+
+  return matches.every((m) => {
+    const mark = (m[1] ?? "").toLowerCase();
+    return mark === "x" || mark === "s";
+  });
+}
 
 // --- Pure state machine ---
 
 export type AdvanceAction =
   | "next"
-  | "retry"
   | "completed"
   | "failed"
   | "awaiting_approval";
@@ -28,28 +163,13 @@ export function advanceWorkflow(
   workflow: WorkflowDef,
   state: WorkflowRunState,
   stepResult: StepResult,
+  context?: TemplateContext,
+  log?: Logger,
 ): AdvanceResult {
   const currentStep = workflow.steps[state.step_index];
 
   // Step failed
   if (!stepResult.success) {
-    // Has retry policy with remaining attempts (only prompt steps have retry)
-    const retryPolicy =
-      currentStep.kind === "prompt" ? currentStep.retry_policy : undefined;
-
-    if (retryPolicy && state.attempt < retryPolicy.max_attempts) {
-      return {
-        action: "retry",
-        state: {
-          ...state,
-          attempt: state.attempt + 1,
-          status: "running",
-          updated_at: new Date().toISOString(),
-        },
-      };
-    }
-
-    // Failed with no retries left
     return {
       action: "failed",
       state: {
@@ -65,18 +185,14 @@ export function advanceWorkflow(
   }
 
   // Step succeeded — advance to next
-  return toNextStep(workflow, state, stepResult);
+  return toNextStep(workflow, state, stepResult, context, log);
 }
 
 function getStepName(step: WorkflowStepDef, index: number): string {
-  if (step.kind === "builtin") return step.uses;
   return step.name || `step-${index}`;
 }
 
-function getStepMaxAttempts(step: WorkflowStepDef): number {
-  if (step.kind === "prompt" && step.retry_policy) {
-    return step.retry_policy.max_attempts;
-  }
+function getStepMaxAttempts(_step: WorkflowStepDef): number {
   return 1;
 }
 
@@ -84,7 +200,24 @@ function toNextStep(
   workflow: WorkflowDef,
   state: WorkflowRunState,
   stepResult: StepResult,
+  context?: TemplateContext,
+  log?: Logger,
 ): AdvanceResult {
+  if (stepResult.todoFullyComplete) {
+    const lastIndex = Math.max(0, workflow.steps.length - 1);
+    const lastStep = workflow.steps[lastIndex];
+    return {
+      action: "completed",
+      state: {
+        ...state,
+        status: "completed",
+        step_index: lastIndex,
+        step_name: getStepName(lastStep, lastIndex),
+        updated_at: new Date().toISOString(),
+      },
+    };
+  }
+
   const nextIndex = state.step_index + 1;
 
   // Collect artifacts from the step result
@@ -118,7 +251,7 @@ function toNextStep(
   const nextStep = workflow.steps[nextIndex];
 
   // Check for approval gate (only prompt steps)
-  const nextStatus: WorkflowRunStatus = shouldAwaitApproval(nextStep)
+  const nextStatus: WorkflowRunStatus = shouldAwaitApproval(nextStep, context, log)
     ? "awaiting_approval"
     : "running";
 
@@ -137,11 +270,17 @@ function toNextStep(
   };
 }
 
-function shouldAwaitApproval(step: WorkflowStepDef): boolean {
+function shouldAwaitApproval(
+  step: WorkflowStepDef,
+  context?: TemplateContext,
+  log?: Logger,
+): boolean {
   if (step.kind !== "prompt") return false;
-  if (!step.await_approval) return false;
-  const enabled = step.await_approval.enabled;
-  return enabled === true || enabled === "true";
+  if (!context) {
+    // Backwards-safe fallback if caller does not provide context.
+    return shouldAwaitApprovalForPrompt(step, {}, log);
+  }
+  return shouldAwaitApprovalForPrompt(step, context, log);
 }
 
 // --- Initialization ---
@@ -190,10 +329,9 @@ export async function runWorkflow(
   while (currentState.status === "running") {
     const step = workflow.steps[currentState.step_index];
 
-    // Check conditional execution (prompt, for, and script steps have `if`)
-    const stepIf = step.kind !== "builtin" ? step.if : undefined;
-    if (stepIf) {
-      const shouldRun = evaluateCondition(stepIf, currentState);
+    // Check conditional execution
+    if (step.if) {
+      const shouldRun = evaluateCondition(step.if, currentState);
       if (!shouldRun) {
         const skipResult: StepResult = {
           success: true,
@@ -203,6 +341,8 @@ export async function runWorkflow(
           workflow,
           currentState,
           skipResult,
+          context,
+          opts.log,
         );
         currentState = nextState;
         persistState(currentState, opts.statePath);
@@ -211,18 +351,19 @@ export async function runWorkflow(
       }
     }
 
-    let result: StepResult;
-
-    if (step.kind === "builtin") {
-      result = await executeBuiltin(step, context);
-    } else {
-      result = await executeStep(step, context, opts);
-    }
+    const result = await executeWorkflowSlice(
+      workflow,
+      currentState.step_index,
+      context,
+      opts,
+    );
 
     const { state: nextState } = advanceWorkflow(
       workflow,
       currentState,
       result,
+      context,
+      opts.log,
     );
     currentState = nextState;
     persistState(currentState, opts.statePath);

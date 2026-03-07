@@ -1,0 +1,9 @@
+site_name: ZombieBen Docs
+site_description: Documentation for ZombieBen workflow orchestration
+theme:
+  name: mkdocs
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Workflows: workflows.md
+  - Operations: operations.md

@@ -11,6 +11,12 @@ const CHAT_SKILLS_DIR = path.join(
   "..", "..", "chat-skills",
 );
 
+// Resolve from dist/util/paths.js → ../../src/integrations
+const INTEGRATIONS_DIR = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..", "..", "src", "integrations",
+);
+
 /** Lazily create ~/.zombieben with repos/ and skill symlinks. */
 export function ensureRunnerDir(): void {
   const dir = zombiebenDir();
@@ -62,12 +68,22 @@ export function worktreeRepoDir(repoSlug: string, worktreeId: string): string {
   return path.join(worktreeDir(repoSlug, worktreeId), "repo");
 }
 
-export function worktreeStatePath(repoSlug: string, worktreeId: string): string {
-  return path.join(worktreeDir(repoSlug, worktreeId), "workflow_state.json");
+// --- Run paths (inside worktrees) ---
+
+export function runsDir(repoSlug: string, worktreeId: string): string {
+  return path.join(worktreeDir(repoSlug, worktreeId), "runs");
 }
 
-export function worktreeArtifactsDir(repoSlug: string, worktreeId: string): string {
-  return path.join(worktreeDir(repoSlug, worktreeId), "artifacts");
+export function runDir(repoSlug: string, worktreeId: string, runId: string): string {
+  return path.join(runsDir(repoSlug, worktreeId), runId);
+}
+
+export function runStatePath(repoSlug: string, worktreeId: string, runId: string): string {
+  return path.join(runDir(repoSlug, worktreeId, runId), "workflow_state.json");
+}
+
+export function runArtifactsDir(repoSlug: string, worktreeId: string, runId: string): string {
+  return path.join(runDir(repoSlug, worktreeId, runId), "artifacts");
 }
 
 // --- Workflow paths (inside repos) ---
@@ -94,4 +110,12 @@ export function seenTriggersPath(): string {
 
 export function runnerLogPath(): string {
   return path.join(zombiebenDir(), "runner.log");
+}
+
+export function runLogPath(repoSlug: string, worktreeId: string, runId: string): string {
+  return path.join(runDir(repoSlug, worktreeId, runId), "run.log");
+}
+
+export function integrationsDir(): string {
+  return INTEGRATIONS_DIR;
 }

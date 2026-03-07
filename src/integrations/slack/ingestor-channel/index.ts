@@ -45,8 +45,9 @@ export function createSlackChannel(): IngestorChannel {
         throw new Error(`Expected slack_webhook trigger, got ${trigger.source}`);
       }
       const threadTs = trigger.raw_payload.thread_ts ?? trigger.raw_payload.ts;
+      const reactTs = trigger.raw_payload.ts;
       const client = createSlackWebClient();
-      return new SlackResponder(client, trigger.raw_payload.channel, threadTs);
+      return new SlackResponder(client, trigger.raw_payload.channel, threadTs, reactTs);
     },
 
     getChannelKey(trigger: Trigger): string {

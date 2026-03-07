@@ -1,18 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Trigger } from "@/ingestor/trigger.js";
 import type { TriageOutcome } from "./types.js";
+import type { CodingAgent, CodingAgentHandle } from "@/codingagents/index.js";
 
 vi.mock("../util/paths.js", () => ({
   reposDir: () => "/home/test/.zombieben/repos",
 }));
 
 vi.mock("../util/logger.js", () => ({
-  log: { info: vi.fn(), error: vi.fn() },
-}));
-
-const mockExecFile = vi.hoisted(() => vi.fn());
-vi.mock("node:util", () => ({
-  promisify: () => mockExecFile,
+  log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
 }));
 
 import { triageTrigger } from "./triage.js";
@@ -25,6 +21,33 @@ function makeTrigger(): Trigger {
     timestamp: "2026-03-05T00:00:00Z",
     raw_payload: { channel: "C123", ts: "1234.5678", user: "U456", text: "implement TASK-1234" },
   };
+}
+
+function envelope(result: unknown): string {
+  // Simulate stream-json: preceding events then the result line
+  const lines = [
+    JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "thinking..." }] } }),
+    JSON.stringify({ type: "result", result: JSON.stringify(result), is_error: false }),
+  ];
+  return lines.join("\n");
+}
+
+function mockAgent(handle: CodingAgentHandle): CodingAgent {
+  return { spawn: vi.fn().mockReturnValue(handle) };
+}
+
+function mockSuccess(stdout: string, stderr = ""): CodingAgent {
+  return mockAgent({
+    done: Promise.resolve({ stdout, stderr }),
+    kill: vi.fn(),
+  });
+}
+
+function mockFailure(message: string): CodingAgent {
+  return mockAgent({
+    done: Promise.reject(new Error(message)),
+    kill: vi.fn(),
+  });
 }
 
 describe("triageTrigger", () => {
@@ -44,24 +67,35 @@ describe("triageTrigger", () => {
       },
       reasoning: "Matched implement.yml.",
     };
-    mockExecFile.mockResolvedValue({ stdout: JSON.stringify(expected) });
+    const agent = mockSuccess(envelope(expected));
 
-    const result = await triageTrigger(makeTrigger());
-
+    const result = await triageTrigger(makeTrigger(), { agent });
     expect(result).toEqual(expected);
   });
 
   it("parses an in_progress_workflow_adjustment result", async () => {
     const expected: TriageOutcome = {
       kind: "in_progress_workflow_adjustment",
-      relatedRun: { repoSlug: "my-repo", worktreeId: "implement-feature-123" },
+      relatedRun: { repoSlug: "my-repo", worktreeId: "implement-feature-123", runId: "implement-feature-123" },
       action: { type: "adjust", instruction: "Make it less red" },
       reasoning: "Follow-up in same thread.",
     };
-    mockExecFile.mockResolvedValue({ stdout: JSON.stringify(expected) });
+    const agent = mockSuccess(envelope(expected));
 
-    const result = await triageTrigger(makeTrigger());
+    const result = await triageTrigger(makeTrigger(), { agent });
+    expect(result).toEqual(expected);
+  });
 
+  it("parses retry_fresh adjustment", async () => {
+    const expected: TriageOutcome = {
+      kind: "in_progress_workflow_adjustment",
+      relatedRun: { repoSlug: "my-repo", worktreeId: "wt-1", runId: "run-1" },
+      action: { type: "retry_fresh", inputsOverride: { issue: "123" } },
+      reasoning: "Retrying failed run from scratch.",
+    };
+    const agent = mockSuccess(envelope(expected));
+
+    const result = await triageTrigger(makeTrigger(), { agent });
     expect(result).toEqual(expected);
   });
 
@@ -71,62 +105,74 @@ describe("triageTrigger", () => {
       message: "You're welcome!",
       reasoning: "User said thanks.",
     };
-    mockExecFile.mockResolvedValue({ stdout: JSON.stringify(expected) });
+    const agent = mockSuccess(envelope(expected));
 
-    const result = await triageTrigger(makeTrigger());
-
+    const result = await triageTrigger(makeTrigger(), { agent });
     expect(result).toEqual(expected);
   });
 
-  it("returns fallback immediate_response when claude invocation fails", async () => {
-    mockExecFile.mockRejectedValue(new Error("Command not found"));
+  it("returns fallback when claude invocation fails", async () => {
+    const agent = mockFailure("Command not found");
 
-    const result = await triageTrigger(makeTrigger());
-
+    const result = await triageTrigger(makeTrigger(), { agent });
     expect(result.kind).toBe("immediate_response");
-    expect((result as { message: string }).message).toContain("having trouble");
+    expect((result as { reasoning: string }).reasoning).toContain("Command not found");
+  });
+
+  it("returns fallback when stdout is empty", async () => {
+    const agent = mockSuccess("");
+
+    const result = await triageTrigger(makeTrigger(), { agent });
+    expect(result.kind).toBe("immediate_response");
+    expect((result as { reasoning: string }).reasoning).toContain("no output");
   });
 
   it("returns fallback when stdout is not valid JSON", async () => {
-    mockExecFile.mockResolvedValue({ stdout: "not json" });
+    const agent = mockSuccess("not json at all");
 
-    const result = await triageTrigger(makeTrigger());
-
+    const result = await triageTrigger(makeTrigger(), { agent });
     expect(result.kind).toBe("immediate_response");
+    expect((result as { reasoning: string }).reasoning).toContain("Could not find result in claude stream");
   });
 
-  it("passes correct flags to claude", async () => {
-    const expected: TriageOutcome = {
-      kind: "immediate_response",
-      message: "hi",
-      reasoning: "test",
-    };
-    mockExecFile.mockResolvedValue({ stdout: JSON.stringify(expected) });
+  it("returns fallback when claude reports an error", async () => {
+    const agent = mockSuccess(JSON.stringify({ type: "result", result: "Something went wrong", is_error: true }));
 
-    await triageTrigger(makeTrigger());
-
-    expect(mockExecFile).toHaveBeenCalledOnce();
-    const [cmd, args] = mockExecFile.mock.calls[0];
-    expect(cmd).toBe("claude");
-    expect(args).toContain("--tools");
-    expect(args).toContain("Read,Glob,Grep");
-    expect(args).toContain("--output-format");
-    expect(args).toContain("json");
-    expect(args).toContain("--print");
-    expect(args).toContain("--dangerously-skip-permissions");
+    const result = await triageTrigger(makeTrigger(), { agent });
+    expect(result.kind).toBe("immediate_response");
+    expect((result as { reasoning: string }).reasoning).toContain("Claude returned error");
   });
 
-  it("uses custom chatCommand when provided", async () => {
-    const expected: TriageOutcome = {
-      kind: "immediate_response",
-      message: "hi",
-      reasoning: "test",
-    };
-    mockExecFile.mockResolvedValue({ stdout: JSON.stringify(expected) });
+  it("treats plain text response as immediate_response", async () => {
+    const agent = mockSuccess(JSON.stringify({ type: "result", result: "No active workflows found.", is_error: false }));
 
-    await triageTrigger(makeTrigger(), { chatCommand: "/usr/local/bin/claude" });
+    const result = await triageTrigger(makeTrigger(), { agent });
+    expect(result.kind).toBe("immediate_response");
+    expect((result as { message: string }).message).toBe("No active workflows found.");
+    expect((result as { reasoning: string }).reasoning).toContain("plain text");
+  });
 
-    const [cmd] = mockExecFile.mock.calls[0];
-    expect(cmd).toBe("/usr/local/bin/claude");
+  it("strips markdown code fences from response", async () => {
+    const inner: TriageOutcome = { kind: "immediate_response", message: "hi", reasoning: "test" };
+    const fenced = "```json\n" + JSON.stringify(inner) + "\n```";
+    const agent = mockSuccess(JSON.stringify({ type: "result", result: fenced, is_error: false }));
+
+    const result = await triageTrigger(makeTrigger(), { agent });
+    expect(result).toEqual(inner);
+  });
+
+  it("passes correct options to agent.spawn", async () => {
+    const expected: TriageOutcome = { kind: "immediate_response", message: "hi", reasoning: "test" };
+    const agent = mockSuccess(envelope(expected));
+
+    await triageTrigger(makeTrigger(), { agent });
+
+    expect(agent.spawn).toHaveBeenCalledOnce();
+    const opts = (agent.spawn as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(opts.readonly).toBe(true);
+    expect(opts.outputFormat).toBe("stream-json");
+    expect(opts.addDirs).toEqual(["/home/test/.zombieben/repos"]);
+    expect(opts.systemPrompt).toBeDefined();
+    expect(opts.prompt).toBeDefined();
   });
 });

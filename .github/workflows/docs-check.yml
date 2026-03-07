@@ -1,0 +1,52 @@
+name: Docs Check
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "docs/**"
+      - "mkdocs.yml"
+      - ".github/workflows/docs-check.yml"
+
+jobs:
+  docs-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install MkDocs
+        run: |
+          python -m pip install --upgrade pip
+          pip install mkdocs
+
+      - name: Build docs
+        run: mkdocs build --strict
+
+  docs-freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce docs update for runtime changes
+        run: |
+          BASE_REF="${{ github.base_ref }}"
+          git fetch origin "$BASE_REF" --depth=1
+          CHANGED="$(git diff --name-only "origin/$BASE_REF"...HEAD)"
+
+          CODE_CHANGED=$(echo "$CHANGED" | grep -E '^(src/(runner|engine|triage|integrations)/)' || true)
+          DOCS_CHANGED=$(echo "$CHANGED" | grep -E '^(docs/|README\.md|mkdocs\.yml)' || true)
+
+          if [ -n "$CODE_CHANGED" ] && [ -z "$DOCS_CHANGED" ]; then
+            echo "Core runtime code changed but no docs updates were detected."
+            echo "Please update docs/ or README.md."
+            exit 1
+          fi

@@ -17,6 +17,8 @@ export interface SpawnOptions {
   log?: Logger;
   mcpConfigs?: Record<string, McpSpawnConfig>;
   env?: Record<string, string>;
+  stdoutLogPath?: string;
+  stderrLogPath?: string;
 }
 
 export interface McpSpawnConfig {

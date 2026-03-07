@@ -1,0 +1,4 @@
+- [ ] Create an empty file at ./trap.txt
+- [ ] Write this to ./trap.txt: "Shh! Everyone be quiet"
+- [ ] Mark this step as failed and stop executing remaining TODO items
+- [ ] Append this to ./trap.txt: "LOUD NOISES!"

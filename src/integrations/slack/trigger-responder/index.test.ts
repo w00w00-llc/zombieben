@@ -1,201 +1,96 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { SlackResponder, parseChoice } from "./index.js";
+import { describe, it, expect, vi } from "vitest";
+import { SlackResponder } from "./index.js";
 import type { WebClient } from "@slack/web-api";
-
-vi.mock("../../../util/keys.js", () => ({
-  getIntegrationKeys: (id: string) => {
-    if (id === "slack") return { bot_token: "xoxb-test-token" };
-    return undefined;
-  },
-}));
+import type { TriageOutcome } from "@/triage/types.js";
 
 function createMockClient() {
   return {
     chat: {
-      postMessage: vi.fn().mockResolvedValue({ ok: true }),
+      postMessage: vi.fn().mockResolvedValue({ ok: true, ts: "1234.9999" }),
+      update: vi.fn().mockResolvedValue({ ok: true }),
     },
-    conversations: {
-      replies: vi.fn().mockResolvedValue({ ok: true, messages: [] }),
+    reactions: {
+      add: vi.fn().mockResolvedValue({ ok: true }),
+      remove: vi.fn().mockResolvedValue({ ok: true }),
     },
   } as unknown as WebClient & {
-    chat: { postMessage: ReturnType<typeof vi.fn> };
-    conversations: { replies: ReturnType<typeof vi.fn> };
+    chat: { postMessage: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+    reactions: { add: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> };
   };
 }
 
 describe("SlackResponder", () => {
-  let responder: SlackResponder;
-  let mockClient: ReturnType<typeof createMockClient>;
+  it("send calls chat.postMessage with correct params", async () => {
+    const client = createMockClient();
+    const responder = new SlackResponder(client as unknown as WebClient, "C123", "1234.5678");
 
-  beforeEach(() => {
-    vi.useFakeTimers();
-    mockClient = createMockClient();
-    responder = new SlackResponder(mockClient as unknown as WebClient, "C123", "1234.5678");
-  });
+    await responder.send("hello world");
 
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  describe("send", () => {
-    it("calls chat.postMessage with correct params", async () => {
-      await responder.send("hello world");
-
-      expect(mockClient.chat.postMessage).toHaveBeenCalledOnce();
-      expect(mockClient.chat.postMessage).toHaveBeenCalledWith({
-        channel: "C123",
-        thread_ts: "1234.5678",
-        text: "hello world",
-      });
+    expect(client.chat.postMessage).toHaveBeenCalledWith({
+      channel: "C123",
+      thread_ts: "1234.5678",
+      text: "hello world",
     });
   });
 
-  describe("promptChoice", () => {
-    it("posts numbered options and returns 0-based index", async () => {
-      // getLatestTs call
-      mockClient.conversations.replies.mockResolvedValueOnce({
-        ok: true,
-        messages: [{ ts: "1234.9000", text: "prompt", bot_id: "B1" }],
-      });
-      // poll - user replies "2"
-      mockClient.conversations.replies.mockResolvedValueOnce({
-        ok: true,
-        messages: [
-          { ts: "1234.9000", text: "prompt", bot_id: "B1" },
-          { ts: "1234.9500", text: "2" },
-        ],
-      });
+  it("sendOutcome posts blocks with mrkdwn", async () => {
+    const client = createMockClient();
+    const responder = new SlackResponder(client as unknown as WebClient, "C123", "1234.5678");
+    const outcome: TriageOutcome = {
+      kind: "immediate_response",
+      message: "hello",
+      reasoning: "test",
+    };
 
-      const promise = responder.promptChoice("Pick one:", ["alpha", "beta", "gamma"]);
-      await vi.advanceTimersByTimeAsync(3_000);
-      const result = await promise;
+    await responder.sendOutcome(outcome);
 
-      expect(result).toBe(1);
-
-      expect(mockClient.chat.postMessage).toHaveBeenCalledWith({
-        channel: "C123",
-        thread_ts: "1234.5678",
-        text: "Pick one:\n1. alpha\n2. beta\n3. gamma",
-      });
+    expect(client.chat.postMessage).toHaveBeenCalledWith({
+      channel: "C123",
+      thread_ts: "1234.5678",
+      text: "Triage: immediate_response\nhello",
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "Triage: immediate_response\nhello",
+          },
+        },
+      ],
     });
   });
 
-  describe("waitForReply", () => {
-    it("posts prompt and returns user reply text", async () => {
-      // getLatestTs
-      mockClient.conversations.replies.mockResolvedValueOnce({
-        ok: true,
-        messages: [{ ts: "1234.8000", text: "prompt", bot_id: "B1" }],
-      });
-      // poll - no new messages
-      mockClient.conversations.replies.mockResolvedValueOnce({
-        ok: true,
-        messages: [{ ts: "1234.8000", text: "prompt", bot_id: "B1" }],
-      });
-      // poll - user replies
-      mockClient.conversations.replies.mockResolvedValueOnce({
-        ok: true,
-        messages: [
-          { ts: "1234.8000", text: "prompt", bot_id: "B1" },
-          { ts: "1234.9000", text: "my answer" },
-        ],
-      });
+  it("edit calls chat.update", async () => {
+    const client = createMockClient();
+    const responder = new SlackResponder(client as unknown as WebClient, "C123", "1234.5678");
 
-      const promise = responder.waitForReply("What do you think?");
-      await vi.advanceTimersByTimeAsync(3_000);
-      await vi.advanceTimersByTimeAsync(3_000);
-      const result = await promise;
+    await responder.edit({ id: "1234.9000" }, "updated text");
 
-      expect(result).toBe("my answer");
-    });
-
-    it("skips bot messages when polling", async () => {
-      // getLatestTs
-      mockClient.conversations.replies.mockResolvedValueOnce({
-        ok: true,
-        messages: [{ ts: "1234.8000", text: "x", bot_id: "B1" }],
-      });
-      // poll - only bot message
-      mockClient.conversations.replies.mockResolvedValueOnce({
-        ok: true,
-        messages: [
-          { ts: "1234.8000", text: "x", bot_id: "B1" },
-          { ts: "1234.8500", text: "bot reply", bot_id: "B1" },
-        ],
-      });
-      // poll - user replies
-      mockClient.conversations.replies.mockResolvedValueOnce({
-        ok: true,
-        messages: [
-          { ts: "1234.8000", text: "x", bot_id: "B1" },
-          { ts: "1234.8500", text: "bot reply", bot_id: "B1" },
-          { ts: "1234.9000", text: "user reply" },
-        ],
-      });
-
-      const promise = responder.waitForReply("question?");
-      await vi.advanceTimersByTimeAsync(3_000);
-      await vi.advanceTimersByTimeAsync(3_000);
-      const result = await promise;
-
-      expect(result).toBe("user reply");
-    });
-
-    it("does not send a message when prompt is empty", async () => {
-      // getLatestTs
-      mockClient.conversations.replies.mockResolvedValueOnce({
-        ok: true,
-        messages: [{ ts: "1234.8000", text: "x", bot_id: "B1" }],
-      });
-      // poll - user replies
-      mockClient.conversations.replies.mockResolvedValueOnce({
-        ok: true,
-        messages: [
-          { ts: "1234.8000", text: "x", bot_id: "B1" },
-          { ts: "1234.9000", text: "reply" },
-        ],
-      });
-
-      const promise = responder.waitForReply("");
-      await vi.advanceTimersByTimeAsync(3_000);
-      const result = await promise;
-
-      expect(result).toBe("reply");
-      expect(mockClient.chat.postMessage).not.toHaveBeenCalled();
+    expect(client.chat.update).toHaveBeenCalledWith({
+      channel: "C123",
+      ts: "1234.9000",
+      text: "updated text",
     });
   });
-});
 
-describe("parseChoice", () => {
-  const options = ["Yes, run it", "No, cancel"];
+  it("react calls reactions.add on reactTs", async () => {
+    const client = createMockClient();
+    const responder = new SlackResponder(client as unknown as WebClient, "C123", "1234.5678", "1234.0000");
 
-  it("parses bare number", () => {
-    expect(parseChoice("1", options)).toBe(0);
-    expect(parseChoice("2", options)).toBe(1);
+    await responder.react("eyes");
+
+    expect(client.reactions.add).toHaveBeenCalledWith({
+      channel: "C123",
+      timestamp: "1234.0000",
+      name: "eyes",
+    });
   });
 
-  it("parses number with surrounding text", () => {
-    expect(parseChoice("<@U0AGRL1EBMX> 1", options)).toBe(0);
-  });
+  it("unreact swallows no_reaction error", async () => {
+    const client = createMockClient();
+    client.reactions.remove.mockRejectedValue({ data: { error: "no_reaction" } });
+    const responder = new SlackResponder(client as unknown as WebClient, "C123", "1234.5678");
 
-  it("matches option text case-insensitively", () => {
-    expect(parseChoice("yes, run it", options)).toBe(0);
-    expect(parseChoice("no, cancel", options)).toBe(1);
-  });
-
-  it("matches partial text (reply is substring of option)", () => {
-    expect(parseChoice("yes", options)).toBe(0);
-    expect(parseChoice("cancel", options)).toBe(1);
-  });
-
-  it("handles @mention prefix with natural text", () => {
-    expect(parseChoice("<@U0AGRL1EBMX> yes, run it", options)).toBe(0);
-    expect(parseChoice("<@U0AGRL1EBMX> no", options)).toBe(1);
-  });
-
-  it("returns -1 for unrecognized input", () => {
-    expect(parseChoice("maybe", options)).toBe(-1);
-    expect(parseChoice("0", options)).toBe(-1);
-    expect(parseChoice("3", options)).toBe(-1);
+    await expect(responder.unreact("eyes")).resolves.toBeUndefined();
   });
 });

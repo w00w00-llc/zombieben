@@ -4,7 +4,7 @@ import {
   createWriteStream,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { CodingAgent, CodingAgentHandle, SpawnOptions } from "./types.js";
 
 let counter = 0;
@@ -36,8 +36,9 @@ export class ClaudeCodingAgent implements CodingAgent {
       }
       args.push(options.prompt);
     } else {
-      // Non-interactive: use -p flag
-      args.push("-p", options.prompt);
+      // Non-interactive: read prompt from stdin so prompt content that starts
+      // with "-" (like TODO checklist items) is not parsed as a CLI flag.
+      args.push("-p", "-");
       if (options.systemPrompt) {
         args.push("--system-prompt", options.systemPrompt);
       }
@@ -131,12 +132,17 @@ export class ClaudeCodingAgent implements CodingAgent {
     options: SpawnOptions,
   ): CodingAgentHandle {
     const id = `zb-agent-${Date.now()}-${counter++}`;
-    const dir = join(tmpdir(), "zombieben-agent");
-    mkdirSync(dir, { recursive: true });
+    const fallbackDir = join(tmpdir(), "zombieben-agent");
+    mkdirSync(fallbackDir, { recursive: true });
 
-    const stderrLogPath = join(dir, `${id}-stderr.log`);
+    const stdoutLogPath = options.stdoutLogPath ?? join(fallbackDir, `${id}-stdout.log`);
+    const stderrLogPath = options.stderrLogPath ?? join(fallbackDir, `${id}-stderr.log`);
+    mkdirSync(dirname(stdoutLogPath), { recursive: true });
+    mkdirSync(dirname(stderrLogPath), { recursive: true });
+    const stdoutStream = createWriteStream(stdoutLogPath);
     const stderrStream = createWriteStream(stderrLogPath);
 
+    options.log?.debug(`Agent stdout log: tail -f ${stdoutLogPath}`);
     options.log?.debug(`Agent stderr log: tail -f ${stderrLogPath}`);
 
     const processEnv = options.env
@@ -147,10 +153,11 @@ export class ClaudeCodingAgent implements CodingAgent {
     try {
       child = spawn(this.command, args, {
         cwd: options.cwd,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe"],
         env: processEnv,
       });
     } catch (err) {
+      stdoutStream.end();
       stderrStream.end();
       throw new Error(
         `Failed to spawn ${this.command}: ${(err as Error).message}`,
@@ -169,8 +176,12 @@ export class ClaudeCodingAgent implements CodingAgent {
         const stdoutChunks: Buffer[] = [];
         let stderrText = "";
 
+        child.stdin!.write(options.prompt);
+        child.stdin!.end();
+
         child.stdout!.on("data", (chunk: Buffer) => {
           stdoutChunks.push(chunk);
+          stdoutStream.write(chunk);
         });
 
         child.stderr!.on("data", (chunk: Buffer) => {
@@ -179,6 +190,7 @@ export class ClaudeCodingAgent implements CodingAgent {
         });
 
         child.on("error", (err) => {
+          stdoutStream.end();
           stderrStream.end();
           reject(
             new Error(`${this.command} process error: ${err.message}`),
@@ -186,6 +198,7 @@ export class ClaudeCodingAgent implements CodingAgent {
         });
 
         child.on("close", (code) => {
+          stdoutStream.end();
           stderrStream.end();
           const stdout = Buffer.concat(stdoutChunks).toString();
 

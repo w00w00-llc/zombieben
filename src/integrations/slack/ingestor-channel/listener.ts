@@ -71,8 +71,6 @@ export class SlackSocketListener {
       };
     }
 
-    this.ingestor.submit(trigger).catch((err) => {
-      log.error(`Ingestion error: ${(err as Error).message}`);
-    });
+    this.ingestor.submit(trigger);
   }
 }

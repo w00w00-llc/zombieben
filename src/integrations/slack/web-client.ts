@@ -6,7 +6,7 @@ export function createSlackWebClient(): WebClient {
   const token = keys?.bot_token;
   if (!token) {
     throw new Error(
-      "Slack bot token not configured. Run `zombieben chat` and use the setup-slack skill.",
+      "Slack bot token not configured. See src/integrations/slack/INTEGRATION.md for setup instructions.",
     );
   }
   return new WebClient(token);

@@ -2,9 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import yaml from "js-yaml";
 import { initRun } from "./init-run.js";
 import type { TriageResult } from "./init-run.js";
 import type { Trigger } from "@/ingestor/trigger.js";
+import { createWorktree } from "../engine/worktree.js";
+import { syncRepo, rebaseWorktreeOntoDefaultBranch } from "./repo-sync.js";
 
 const TEST_DIR = path.join(os.tmpdir(), "zombieben-init-run-test");
 
@@ -14,6 +17,11 @@ vi.mock("../util/logger.js", () => ({
 
 vi.mock("../engine/worktree.js", () => ({
   createWorktree: vi.fn().mockResolvedValue("/mock/worktree/path"),
+}));
+
+vi.mock("./repo-sync.js", () => ({
+  syncRepo: vi.fn().mockResolvedValue(undefined),
+  rebaseWorktreeOntoDefaultBranch: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe("initRun", () => {
@@ -33,7 +41,7 @@ describe("initRun", () => {
     fs.mkdirSync(workflowsDir, { recursive: true });
     fs.writeFileSync(
       path.join(workflowsDir, "fix-bug.yml"),
-      `name: Fix Bug\nsteps:\n  - name: do-it\n    prompt: Fix the bug\n`,
+      `name: Fix Bug\nsteps:\n  - name: do-it\n    prompt: Fix issue \${{ inputs.issue }}\n  - name: notify\n    prompt: Reply via \${{ zombieben.trigger }}\n  - name: save\n    prompt: Store output in \${{ artifacts.plan }}\n`,
     );
     fs.writeFileSync(
       path.join(workflowsDir, "followup.yml"),
@@ -44,6 +52,7 @@ describe("initRun", () => {
   afterEach(() => {
     delete process.env.ZOMBIEBEN_RUNNER_DIR;
     fs.rmSync(TEST_DIR, { recursive: true, force: true });
+    vi.clearAllMocks();
   });
 
   it("creates directory structure with runs/{runId}/workflow_state.json and trigger.json", async () => {
@@ -59,14 +68,21 @@ describe("initRun", () => {
       id: "slack-C123-1234.5678",
       groupKeys: ["slack:C123:1234.5678"],
       timestamp: new Date().toISOString(),
-      raw_payload: {},
+      raw_payload: { channel: "C123", ts: "1234.5678", text: "hello" },
+      context: { allThreadMessages: [{ text: "hello" }] },
     };
 
     const result = await initRun(triageResult, trigger);
 
     expect(result.repoSlug).toBe("my-org--my-repo");
-    expect(result.worktreeId).toMatch(/^fix-bug-\d+$/);
+    expect(result.worktreeId).toMatch(/^\d+-fix-bug$/);
     expect(result.runId).toBe(result.worktreeId); // For "create", runId === worktreeId
+    expect(syncRepo).toHaveBeenCalledWith("my-org--my-repo");
+    expect(createWorktree).toHaveBeenCalledWith("my-org--my-repo", result.worktreeId);
+    expect(rebaseWorktreeOntoDefaultBranch).toHaveBeenCalledWith(
+      "my-org--my-repo",
+      result.worktreeId,
+    );
 
     // Check runs/{runId}/workflow_state.json
     const tasksDir = path.join(TEST_DIR, "repos", "my-org--my-repo", "tasks");
@@ -84,8 +100,31 @@ describe("initRun", () => {
     const triggerPath = path.join(runDir, "trigger.json");
     expect(fs.existsSync(triggerPath)).toBe(true);
     const triggerData = JSON.parse(fs.readFileSync(triggerPath, "utf-8"));
-    expect(triggerData.id).toBe("slack-C123-1234.5678");
-    expect(triggerData.source).toBe("slack");
+    expect(triggerData).toEqual(trigger);
+
+    // Check resolved workflow snapshot in artifacts
+    const resolvedWorkflowPath = path.join(
+      runDir,
+      "artifacts",
+      "workflow.resolved.yml",
+    );
+    expect(fs.existsSync(resolvedWorkflowPath)).toBe(true);
+    const resolvedWorkflow = yaml.load(
+      fs.readFileSync(resolvedWorkflowPath, "utf-8"),
+    ) as Record<string, unknown>;
+    const steps = (resolvedWorkflow.steps ?? []) as Array<Record<string, unknown>>;
+    expect(steps[0].prompt).toBe("Fix issue 123");
+    expect(steps[1].prompt).toBe(`Reply via ${triggerPath}`);
+    expect(steps[2].prompt).toBe(
+      `Store output in ${path.join(runDir, "artifacts", "plan.md")}`,
+    );
+
+    // Check initial TODO snapshot exists at run init.
+    const todoPath = path.join(runDir, "artifacts", "TODO.md");
+    expect(fs.existsSync(todoPath)).toBe(true);
+    const todo = fs.readFileSync(todoPath, "utf-8");
+    expect(todo).toContain(`Reply via ${triggerPath}`);
+    expect(todo).toContain(`Store output in ${path.join(runDir, "artifacts", "plan.md")}`);
   });
 
   it("creates a new run under existing worktree for action: inherit", async () => {
@@ -119,8 +158,14 @@ describe("initRun", () => {
     const result = await initRun(triageResult, trigger);
 
     expect(result.worktreeId).toBe(worktreeId);
-    expect(result.runId).toMatch(/^follow-up-\d+$/);
+    expect(result.runId).toMatch(/^\d+-follow-up$/);
     expect(result.runId).not.toBe(result.worktreeId);
+    expect(syncRepo).not.toHaveBeenCalled();
+    expect(createWorktree).not.toHaveBeenCalled();
+    expect(rebaseWorktreeOntoDefaultBranch).toHaveBeenCalledWith(
+      "my-org--my-repo",
+      worktreeId,
+    );
 
     // Check state was written
     const statePath = path.join(

@@ -1,8 +1,5 @@
-import type { TriggerResponder } from "@/responder/responder.js";
 import type {
   TriageOutcome,
-  InProgressWorkflowAdjustment,
-  NewWorkflow,
 } from "./types.js";
 
 export interface PresentResult {
@@ -13,6 +10,12 @@ export interface PresentResult {
     workflowName: string;
     inputs: Record<string, string>;
     worktreeId?: string;
+  };
+  retryResolution?: {
+    repoSlug: string;
+    worktreeId: string;
+    runId: string;
+    inputsOverride?: Record<string, string>;
   };
 }
 
@@ -32,117 +35,41 @@ function extractResolution(run: {
   };
 }
 
-export async function presentOutcome(
-  outcome: TriageOutcome,
-  responder: TriggerResponder,
-): Promise<PresentResult> {
+export function presentOutcome(outcome: TriageOutcome): PresentResult {
   switch (outcome.kind) {
     case "immediate_response":
-      await responder.send(outcome.message);
       return { shouldRun: false };
 
     case "new_workflow":
-      return presentNewWorkflow(outcome, responder);
+      return presentNewWorkflow(outcome);
 
     case "in_progress_workflow_adjustment":
-      await presentAdjustment(outcome, responder);
+      if (outcome.action.type === "retry_fresh") {
+        return {
+          shouldRun: true,
+          retryResolution: {
+            repoSlug: outcome.relatedRun.repoSlug,
+            worktreeId: outcome.relatedRun.worktreeId,
+            runId: outcome.relatedRun.runId,
+            inputsOverride: outcome.action.inputsOverride,
+          },
+        };
+      }
       return { shouldRun: false };
   }
 }
 
-async function presentNewWorkflow(
-  outcome: NewWorkflow,
-  responder: TriggerResponder,
-): Promise<PresentResult> {
+function presentNewWorkflow(outcome: Extract<TriageOutcome, { kind: "new_workflow" }>): PresentResult {
   const { resolution } = outcome;
 
   switch (resolution.type) {
-    case "run": {
-      await responder.send(formatRunMessage(resolution));
+    case "run":
       return { shouldRun: true, resolution: extractResolution(resolution) };
-    }
 
-    case "confirm": {
-      const choice = await responder.promptChoice(
-        resolution.confirmationPrompt,
-        ["Yes, run it", "No, cancel"],
-      );
-      if (choice === 0) {
-        await responder.send(formatRunMessage(resolution));
-        return { shouldRun: true, resolution: extractResolution(resolution) };
-      } else {
-        await responder.send("Cancelled.");
-        return { shouldRun: false };
-      }
-    }
+    case "confirm":
+      return { shouldRun: false };
 
-    case "suggest": {
-      const options = resolution.suggestions.map((s) => s.workflowName);
-      const choice = await responder.promptChoice(resolution.prompt, options);
-      const selected = resolution.suggestions[choice];
-      await responder.send(formatRunMessage(selected));
-      return { shouldRun: true, resolution: extractResolution(selected) };
-    }
-  }
-}
-
-function formatRunMessage(run: {
-  workflowName: string;
-  workflowFile: string;
-  repoSlug: string;
-  inputs: Record<string, string>;
-}): string {
-  const lines = [
-    `Running *${run.workflowName}* (\`${run.workflowFile}\`) in \`${run.repoSlug}\``,
-  ];
-
-  const entries = Object.entries(run.inputs);
-  if (entries.length > 0) {
-    for (const [key, value] of entries) {
-      lines.push(`> *${key}:* ${value}`);
-    }
-  }
-
-  return lines.join("\n");
-}
-
-async function presentAdjustment(
-  outcome: InProgressWorkflowAdjustment,
-  responder: TriggerResponder,
-): Promise<void> {
-  const { repoSlug, worktreeId } = outcome.relatedRun;
-  const { action } = outcome;
-
-  switch (action.type) {
-    case "status_check":
-      await responder.send(
-        `Checking status of *${worktreeId}* in \`${repoSlug}\`...`,
-      );
-      return;
-    case "pause":
-      await responder.send(
-        `Pausing *${worktreeId}* in \`${repoSlug}\`.`,
-      );
-      return;
-    case "resume":
-      await responder.send(
-        `Resuming *${worktreeId}* in \`${repoSlug}\`.`,
-      );
-      return;
-    case "cancel":
-      await responder.send(
-        `Cancelling *${worktreeId}* in \`${repoSlug}\`.`,
-      );
-      return;
-    case "adjust":
-      await responder.send(
-        `Adjusting *${worktreeId}* in \`${repoSlug}\`: ${action.instruction}`,
-      );
-      return;
-    case "rollback_to_step":
-      await responder.send(
-        `Rolling back *${worktreeId}* in \`${repoSlug}\` to step ${action.stepIndex}.`,
-      );
-      return;
+    case "suggest":
+      return { shouldRun: false };
   }
 }

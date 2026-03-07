@@ -1,0 +1,174 @@
+import fs, { globSync } from "node:fs";
+import { scanActiveRuns, type ActiveRun } from "./scanner.js";
+import { parseWorkflow } from "@/engine/workflow-parser.js";
+import {
+  advanceWorkflow,
+  executeWorkflowSlice,
+  type RunWorkflowOpts,
+  type StepResult,
+} from "@/engine/workflow-runner.js";
+import {
+  repoWorkflowsDir,
+  worktreeRepoDir,
+  runArtifactsDir,
+  runDir as getRunDir,
+  runLogPath,
+} from "@/util/paths.js";
+import type { TemplateContext } from "@/engine/workflow-template.js";
+import { extractArtifactNames } from "@/engine/workflow-template.js";
+import type { CodingAgent } from "@/codingagents/index.js";
+import type { WorkflowDef } from "@/engine/workflow-types.js";
+import path from "node:path";
+import { log, createLogger } from "@/util/logger.js";
+import { prepareWorkflowForRun } from "./runtime-workflow.js";
+
+let _agent: CodingAgent | undefined;
+
+export function setAgent(agent: CodingAgent): void {
+  _agent = agent;
+}
+
+/**
+ * Single tick of the orchestrator: find active runs and advance them.
+ */
+export async function processTick(): Promise<void> {
+  const activeRuns = scanActiveRuns();
+
+  const results = await Promise.allSettled(activeRuns.map(processRun));
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status === "rejected") {
+      const run = activeRuns[i];
+      log.error(
+        `Error processing ${run.repoSlug}/${run.worktreeId}/${run.runId}: ${(result.reason as Error).message}`
+      );
+    }
+  }
+}
+
+async function processRun(run: ActiveRun): Promise<void> {
+  const { repoSlug, worktreeId, runId, state, statePath } = run;
+
+  const runLog = createLogger({ logFile: runLogPath(repoSlug, worktreeId, runId) });
+
+  // Load workflow definition
+  const workflowsDir = repoWorkflowsDir(repoSlug);
+  const workflowPath = path.join(workflowsDir, state.workflow_file);
+
+  if (!fs.existsSync(workflowPath)) {
+    runLog.error(`Workflow file not found: ${workflowPath}`);
+    return;
+  }
+
+  const workflowContent = fs.readFileSync(workflowPath, "utf-8");
+  const workflow = prepareWorkflowForRun(
+    repoSlug,
+    parseWorkflow(workflowContent),
+  );
+
+  const workingDir = worktreeRepoDir(repoSlug, worktreeId);
+  const artifactsDir = runArtifactsDir(repoSlug, worktreeId, runId);
+
+  // Pre-populate artifacts with deterministic paths for all referenced names
+  const allArtifactNames = collectArtifactNames(workflow);
+  const artifacts: Record<string, string> = { ...state.artifacts };
+  for (const name of allArtifactNames) {
+    if (!artifacts[name]) {
+      artifacts[name] = path.join(artifactsDir, `${name}.md`);
+    }
+  }
+
+  // Discover skills from worktree repo
+  const skills = discoverSkills(workingDir);
+
+  // Build template context
+  const triggerPath = path.join(getRunDir(repoSlug, worktreeId, runId), "trigger.json");
+  const context: TemplateContext = {
+    inputs: state.inputs as Record<string, unknown>,
+    artifacts,
+    skills,
+    worktree: { id: worktreeId, path: workingDir },
+    zombieben: { repo_slug: repoSlug, trigger: triggerPath },
+  };
+
+  const step = workflow.steps[state.step_index];
+
+  if (!_agent) {
+    throw new Error("CodingAgent not set — call setAgent() before processTick()");
+  }
+
+  const opts: RunWorkflowOpts = {
+    agent: _agent,
+    workingDir,
+    artifactsDir,
+    statePath,
+    log: runLog,
+  };
+  const result: StepResult = await executeWorkflowSlice(workflow, state.step_index, context, opts);
+
+  const { action, state: nextState } = advanceWorkflow(
+    workflow,
+    state,
+    result,
+    context,
+    runLog,
+  );
+
+  fs.writeFileSync(statePath, JSON.stringify(nextState, null, 2));
+
+  runLog.info(
+    `${repoSlug}/${worktreeId}/${runId}: ${state.step_name} → ${action} (${nextState.status})`
+  );
+}
+
+function collectArtifactNames(workflow: WorkflowDef): string[] {
+  const names = new Set<string>();
+  for (const step of workflow.steps) {
+    collectArtifactNamesFromStep(step, names);
+  }
+  return [...names];
+}
+
+function collectArtifactNamesFromStep(step: WorkflowDef["steps"][number], names: Set<string>): void {
+  if (step.kind === "prompt") {
+    for (const n of extractArtifactNames(step.prompt)) names.add(n);
+    if (step.await_approval?.attachments) {
+      for (const a of step.await_approval.attachments) {
+        for (const n of extractArtifactNames(a)) names.add(n);
+      }
+    }
+    if (step.branch) {
+      for (const s of step.branch.if.steps) collectArtifactNamesFromStep(s, names);
+      for (const s of step.branch.else.steps) collectArtifactNamesFromStep(s, names);
+    }
+  } else if (step.kind === "for") {
+    for (const s of step.steps) collectArtifactNamesFromStep(s, names);
+  }
+}
+
+function discoverSkills(repoDir: string): Record<string, string> {
+  const skills: Record<string, string> = {};
+  const skillDirs = [
+    path.join(repoDir, ".zombieben", "skills"),
+    path.join(repoDir, ".agents", "skills"),
+  ];
+
+  for (const dir of skillDirs) {
+    if (!fs.existsSync(dir)) continue;
+    try {
+      const files = globSync("**/*", { cwd: dir });
+      for (const file of files) {
+        const fullPath = path.join(dir, file);
+        if (!fs.statSync(fullPath).isFile()) continue;
+        const name = path.basename(file, path.extname(file));
+        if (!skills[name]) {
+          skills[name] = fullPath;
+        }
+      }
+    } catch {
+      // Skip if glob fails
+    }
+  }
+
+  return skills;
+}

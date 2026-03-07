@@ -1,0 +1,23 @@
+---
+name: Failing Workflow
+description: >
+  Simulates a ZombieBen workflow with a failing step
+
+steps:
+  - name: Set random value
+    prompt: >
+      Generate a random number between 0 and 1 using bash, and
+      store it in ./failing-workflow.txt. If that file already
+      exists, overwrite it.
+  - name: Check value
+    prompt: >
+      Check that the value in ./failing-workflow.txt is
+      greater than 10
+  - name: Success task (shouldn't run)
+    prompt: Append "i shouldn't be here!" to ./failing-workflow.txt
+  - name: Failure task
+    if: failure
+    prompt: Append "i should be here!" to ./failing-workflow.txt
+  - name: Always task
+    if: always
+    prompt: Append "i should be here too!" to ./failing-workflow.txt

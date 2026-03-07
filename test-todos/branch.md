@@ -1,0 +1,7 @@
+- [ ] Create an empty file at ./branch.txt
+- [ ] Flip a coin and write the result (heads or tails) to ./branch.txt
+- [ ] If the value of ./branch.txt is "heads", mark the todo step "CONDITION 2" as well as all of its sub-steps as skipped, then continue on with "CONDITION 1". If the value is "tails", mark the todo step "CONDITION 1" as well as all of its sub-steps as skipped, then continue on with "CONDITION 2".
+  - [ ] CONDITION 1
+    - [ ] Append "Heads wins!" to ./branch.txt
+  - [ ] CONDITION 2
+    - [ ] Append "Tails wins!" to ./branch.txt

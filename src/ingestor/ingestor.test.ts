@@ -30,16 +30,16 @@ describe("Ingestor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     dedupStore = new InMemoryDedupStore();
-    onTrigger = vi.fn().mockResolvedValue(undefined);
+    onTrigger = vi.fn();
     ingestor = new Ingestor({
       dedupStore,
       channels: [],
-      onTrigger: onTrigger as unknown as (result: ResponderSet) => Promise<void>,
+      onTrigger: onTrigger as unknown as (result: ResponderSet) => void,
     });
   });
 
   it("calls onTrigger with ResponderSet", async () => {
-    await ingestor.submit(makeTrigger());
+    ingestor.submit(makeTrigger());
 
     expect(onTrigger).toHaveBeenCalledOnce();
     const result = onTrigger.mock.calls[0][0] as ResponderSet;
@@ -49,20 +49,20 @@ describe("Ingestor", () => {
 
   it("deduplicates triggers by id", async () => {
     const trigger = makeTrigger();
-    await ingestor.submit(trigger);
-    await ingestor.submit(trigger);
+    ingestor.submit(trigger);
+    ingestor.submit(trigger);
 
     expect(onTrigger).toHaveBeenCalledOnce();
   });
 
   it("adds trigger ID to dedup store", async () => {
-    await ingestor.submit(makeTrigger());
+    ingestor.submit(makeTrigger());
     expect(dedupStore.has("slack-C123-1234.5678")).toBe(true);
   });
 
   it("allows different trigger IDs through", async () => {
-    await ingestor.submit(makeTrigger("id-1"));
-    await ingestor.submit(makeTrigger("id-2"));
+    ingestor.submit(makeTrigger("id-1"));
+    ingestor.submit(makeTrigger("id-2"));
     expect(onTrigger).toHaveBeenCalledTimes(2);
   });
 });

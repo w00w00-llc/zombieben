@@ -47,7 +47,7 @@ function createMockIngestor(): Ingestor & {
   submit: ReturnType<typeof vi.fn>;
 } {
   return {
-    submit: vi.fn().mockResolvedValue(undefined),
+    submit: vi.fn(),
   } as unknown as Ingestor & { submit: ReturnType<typeof vi.fn> };
 }
 

@@ -5,14 +5,18 @@ import type { IngestorChannel } from "@/ingestor/ingestor-channel.js";
 
 const mockResponder: TriggerResponder = {
   send: vi.fn(),
-  promptChoice: vi.fn(),
-  waitForReply: vi.fn(),
+  sendOutcome: vi.fn(),
+  edit: vi.fn(),
+  react: vi.fn(),
+  unreact: vi.fn(),
 };
 
 const mockNotifierResponder: TriggerResponder = {
   send: vi.fn(),
-  promptChoice: vi.fn(),
-  waitForReply: vi.fn(),
+  sendOutcome: vi.fn(),
+  edit: vi.fn(),
+  react: vi.fn(),
+  unreact: vi.fn(),
 };
 
 vi.mock("../integrations/slack/notifier-responder/index.js", () => ({

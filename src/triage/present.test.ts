@@ -1,44 +1,20 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { TriggerResponder } from "@/responder/responder.js";
+import { describe, it, expect } from "vitest";
 import type { TriageOutcome } from "./types.js";
-import { presentOutcome, type PresentResult } from "./present.js";
-
-function mockResponder(): TriggerResponder {
-  return {
-    send: vi.fn().mockResolvedValue({ id: "msg-1" }),
-    edit: vi.fn().mockResolvedValue(undefined),
-    react: vi.fn().mockResolvedValue(undefined),
-    unreact: vi.fn().mockResolvedValue(undefined),
-    promptChoice: vi.fn().mockResolvedValue(0),
-    waitForReply: vi.fn().mockResolvedValue(""),
-  };
-}
+import { presentOutcome } from "./present.js";
 
 describe("presentOutcome", () => {
-  let responder: ReturnType<typeof mockResponder>;
-
-  beforeEach(() => {
-    responder = mockResponder();
-  });
-
-  // --- immediate_response ---
-
-  it("sends message as-is for immediate_response", async () => {
+  it("returns shouldRun false for immediate_response", () => {
     const outcome: TriageOutcome = {
       kind: "immediate_response",
       message: "Hello there!",
       reasoning: "greeting",
     };
 
-    const result = await presentOutcome(outcome, responder);
-
-    expect(responder.send).toHaveBeenCalledWith("Hello there!");
+    const result = presentOutcome(outcome);
     expect(result.shouldRun).toBe(false);
   });
 
-  // --- new_workflow: run ---
-
-  it("sends run message for new_workflow run", async () => {
+  it("returns shouldRun true + resolution for new_workflow run", () => {
     const outcome: TriageOutcome = {
       kind: "new_workflow",
       resolution: {
@@ -51,12 +27,7 @@ describe("presentOutcome", () => {
       reasoning: "matched",
     };
 
-    const result = await presentOutcome(outcome, responder);
-
-    expect(responder.send).toHaveBeenCalledWith(
-      "Running *Implement Feature* (`implement.yml`) in `my-org/my-repo`\n> *task_id:* TASK-1",
-    );
-    expect(responder.promptChoice).not.toHaveBeenCalled();
+    const result = presentOutcome(outcome);
     expect(result.shouldRun).toBe(true);
     expect(result.resolution).toEqual({
       repoSlug: "my-org/my-repo",
@@ -66,11 +37,7 @@ describe("presentOutcome", () => {
     });
   });
 
-  // --- new_workflow: confirm ---
-
-  it("sends run message when user confirms", async () => {
-    vi.mocked(responder.promptChoice).mockResolvedValue(0);
-
+  it("returns shouldRun false for new_workflow confirm", () => {
     const outcome: TriageOutcome = {
       kind: "new_workflow",
       resolution: {
@@ -79,56 +46,15 @@ describe("presentOutcome", () => {
         workflowFile: "deploy.yml",
         workflowName: "Deploy to Prod",
         inputs: {},
-        confirmationPrompt: "Deploy to production?",
       },
       reasoning: "needs confirm",
     };
 
-    const result = await presentOutcome(outcome, responder);
-
-    expect(responder.promptChoice).toHaveBeenCalledWith(
-      "Deploy to production?",
-      ["Yes, run it", "No, cancel"],
-    );
-    expect(responder.send).toHaveBeenCalledWith(
-      "Running *Deploy to Prod* (`deploy.yml`) in `my-org/my-repo`",
-    );
-    expect(result.shouldRun).toBe(true);
-    expect(result.resolution).toEqual({
-      repoSlug: "my-org/my-repo",
-      workflowFile: "deploy.yml",
-      workflowName: "Deploy to Prod",
-      inputs: {},
-    });
-  });
-
-  it("sends cancelled message when user declines", async () => {
-    vi.mocked(responder.promptChoice).mockResolvedValue(1);
-
-    const outcome: TriageOutcome = {
-      kind: "new_workflow",
-      resolution: {
-        type: "confirm",
-        repoSlug: "my-org/my-repo",
-        workflowFile: "deploy.yml",
-        workflowName: "Deploy to Prod",
-        inputs: {},
-        confirmationPrompt: "Deploy to production?",
-      },
-      reasoning: "needs confirm",
-    };
-
-    const result = await presentOutcome(outcome, responder);
-
-    expect(responder.send).toHaveBeenCalledWith("Cancelled.");
+    const result = presentOutcome(outcome);
     expect(result.shouldRun).toBe(false);
   });
 
-  // --- new_workflow: suggest ---
-
-  it("prompts with workflow names and sends run message for selection", async () => {
-    vi.mocked(responder.promptChoice).mockResolvedValue(1);
-
+  it("returns shouldRun false for new_workflow suggest", () => {
     const outcome: TriageOutcome = {
       kind: "new_workflow",
       resolution: {
@@ -141,40 +67,17 @@ describe("presentOutcome", () => {
             inputs: {},
             description: "Builds the project",
           },
-          {
-            repoSlug: "org/repo-b",
-            workflowFile: "test.yml",
-            workflowName: "Run Tests",
-            inputs: {},
-            description: "Runs all tests",
-          },
         ],
         prompt: "Which workflow?",
       },
       reasoning: "ambiguous",
     };
 
-    const result = await presentOutcome(outcome, responder);
-
-    expect(responder.promptChoice).toHaveBeenCalledWith("Which workflow?", [
-      "Build",
-      "Run Tests",
-    ]);
-    expect(responder.send).toHaveBeenCalledWith(
-      "Running *Run Tests* (`test.yml`) in `org/repo-b`",
-    );
-    expect(result.shouldRun).toBe(true);
-    expect(result.resolution).toEqual({
-      repoSlug: "org/repo-b",
-      workflowFile: "test.yml",
-      workflowName: "Run Tests",
-      inputs: {},
-    });
+    const result = presentOutcome(outcome);
+    expect(result.shouldRun).toBe(false);
   });
 
-  // --- in_progress_workflow_adjustment ---
-
-  it("sends status_check message", async () => {
+  it("returns shouldRun false for status_check", () => {
     const outcome: TriageOutcome = {
       kind: "in_progress_workflow_adjustment",
       relatedRun: { repoSlug: "org/repo", worktreeId: "wt-123", runId: "wt-123" },
@@ -182,31 +85,23 @@ describe("presentOutcome", () => {
       reasoning: "user asked",
     };
 
-    const result = await presentOutcome(outcome, responder);
-
-    expect(responder.send).toHaveBeenCalledWith(
-      "Checking status of *wt-123* in `org/repo`...",
-    );
+    const result = presentOutcome(outcome);
     expect(result.shouldRun).toBe(false);
   });
 
-  it("sends pause message", async () => {
+  it("returns shouldRun false for pause", () => {
     const outcome: TriageOutcome = {
       kind: "in_progress_workflow_adjustment",
       relatedRun: { repoSlug: "org/repo", worktreeId: "wt-123", runId: "wt-123" },
       action: { type: "pause" },
-      reasoning: "user asked",
+      reasoning: "user paused",
     };
 
-    const result = await presentOutcome(outcome, responder);
-
-    expect(responder.send).toHaveBeenCalledWith(
-      "Pausing *wt-123* in `org/repo`.",
-    );
+    const result = presentOutcome(outcome);
     expect(result.shouldRun).toBe(false);
   });
 
-  it("sends resume message", async () => {
+  it("returns shouldRun false for resume", () => {
     const outcome: TriageOutcome = {
       kind: "in_progress_workflow_adjustment",
       relatedRun: { repoSlug: "org/repo", worktreeId: "wt-123", runId: "wt-123" },
@@ -214,15 +109,11 @@ describe("presentOutcome", () => {
       reasoning: "user asked",
     };
 
-    const result = await presentOutcome(outcome, responder);
-
-    expect(responder.send).toHaveBeenCalledWith(
-      "Resuming *wt-123* in `org/repo`.",
-    );
+    const result = presentOutcome(outcome);
     expect(result.shouldRun).toBe(false);
   });
 
-  it("sends cancel message", async () => {
+  it("returns shouldRun false for cancel", () => {
     const outcome: TriageOutcome = {
       kind: "in_progress_workflow_adjustment",
       relatedRun: { repoSlug: "org/repo", worktreeId: "wt-123", runId: "wt-123" },
@@ -230,15 +121,11 @@ describe("presentOutcome", () => {
       reasoning: "user asked",
     };
 
-    const result = await presentOutcome(outcome, responder);
-
-    expect(responder.send).toHaveBeenCalledWith(
-      "Cancelling *wt-123* in `org/repo`.",
-    );
+    const result = presentOutcome(outcome);
     expect(result.shouldRun).toBe(false);
   });
 
-  it("sends adjust message with instruction", async () => {
+  it("returns shouldRun false for adjust", () => {
     const outcome: TriageOutcome = {
       kind: "in_progress_workflow_adjustment",
       relatedRun: { repoSlug: "org/repo", worktreeId: "wt-123", runId: "wt-123" },
@@ -246,15 +133,11 @@ describe("presentOutcome", () => {
       reasoning: "user asked",
     };
 
-    const result = await presentOutcome(outcome, responder);
-
-    expect(responder.send).toHaveBeenCalledWith(
-      "Adjusting *wt-123* in `org/repo`: Make it less red",
-    );
+    const result = presentOutcome(outcome);
     expect(result.shouldRun).toBe(false);
   });
 
-  it("sends rollback_to_step message", async () => {
+  it("returns shouldRun false for rollback_to_step", () => {
     const outcome: TriageOutcome = {
       kind: "in_progress_workflow_adjustment",
       relatedRun: { repoSlug: "org/repo", worktreeId: "wt-123", runId: "wt-123" },
@@ -262,11 +145,25 @@ describe("presentOutcome", () => {
       reasoning: "user asked",
     };
 
-    const result = await presentOutcome(outcome, responder);
-
-    expect(responder.send).toHaveBeenCalledWith(
-      "Rolling back *wt-123* in `org/repo` to step 3.",
-    );
+    const result = presentOutcome(outcome);
     expect(result.shouldRun).toBe(false);
+  });
+
+  it("returns retryResolution for retry_fresh", () => {
+    const outcome: TriageOutcome = {
+      kind: "in_progress_workflow_adjustment",
+      relatedRun: { repoSlug: "org/repo", worktreeId: "wt-123", runId: "run-123" },
+      action: { type: "retry_fresh", inputsOverride: { issue: "456" } },
+      reasoning: "user asked to retry",
+    };
+
+    const result = presentOutcome(outcome);
+    expect(result.shouldRun).toBe(true);
+    expect(result.retryResolution).toEqual({
+      repoSlug: "org/repo",
+      worktreeId: "wt-123",
+      runId: "run-123",
+      inputsOverride: { issue: "456" },
+    });
   });
 });

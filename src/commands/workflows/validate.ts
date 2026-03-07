@@ -64,7 +64,7 @@ export function registerWorkflowsValidateCommand(parent: Command): void {
           try {
             const content = fs.readFileSync(filePath, "utf-8");
             const workflow = parseWorkflow(content);
-            const errors = validateWorkflow(workflow);
+            const errors = validateWorkflow(workflow, { repoDir: repoRoot });
 
             if (errors.length > 0) {
               hasErrors = true;

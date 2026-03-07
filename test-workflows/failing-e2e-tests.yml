@@ -1,0 +1,53 @@
+---
+name: Failing E2E Tests
+description: >
+  Simulating checking e2e tests, determining if they're valid failures or
+  flaky tests, and fixing only the failing ones. Tests branching, looping
+
+steps:
+  - name: Set up dummy workflow logs
+    prompt: Generate a random number between 0 and 1 using bash.
+    branch:
+      - if: result is greater than 0.5
+        steps:
+          - name: Set up dummy failures
+            prompt: >
+              Write this to ./failing-e2e-tests/job_output.txt: "test1, failing\ntest2, success\ntest3, failing"
+      - else:
+        steps:
+          - name: Set up dummy failures
+            prompt: >
+              Write this to ./failing-e2e-tests/job_output.txt: "Runner crashed"
+  - name: Analyze failures
+    prompt: >
+      Analyze the failure in ./failing-e2e-tests/job_output.txt and determine the
+      root cause of the failure
+    branch:
+      - if: cause of failure is failing tests
+        steps:
+          - name: Log failed tests
+            prompt: >
+              Log the tests that are failing in ./failing-e2e-tests/failed-tests.txt
+              in a table with two columns: "Test Name" and "Status". "Status" should
+              be set to "Pending" for each test
+          - name: Label Flaky Tests
+            for: Each test in ./failing-e2e-tests/failed-tests.txt
+            steps:
+              - name: Label the test
+                prompt: >
+                  Generate a random number between 0 and 1 using bash. If the value is
+                  greater than 0.5, update the status of the test to "Flaky". Otherwise,
+                  update the status to "Failing".
+          - name: Fix Failing Tests
+            for: Each test with the status "Failing" in ./failing-e2e-tests/failed-tests.txt
+            steps:
+              - name: Fix test
+                prompt: >
+                  Append the test name to ./failing-e2e-tests/fixed-tests.txt
+      - else:
+        steps:
+          - name: Fix issues
+            prompt: Write "not a test failure, no no no!" to ./failing-e2e-tests/fixed-tests.txt
+
+
+

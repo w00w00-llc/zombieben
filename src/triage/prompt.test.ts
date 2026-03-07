@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildTriagePrompt } from "./prompt.js";
+import { buildTriageSystemPrompt, buildTriagePrompt } from "./prompt.js";
 import type { Trigger } from "@/ingestor/trigger.js";
 
 vi.mock("../util/paths.js", () => ({
@@ -16,6 +16,41 @@ function makeTrigger(overrides: Partial<Trigger> = {}): Trigger {
     ...overrides,
   };
 }
+
+describe("buildTriageSystemPrompt", () => {
+  it("includes file path patterns for workflows and runs", () => {
+    const prompt = buildTriageSystemPrompt();
+    expect(prompt).toContain("/home/test/.zombieben/repos/*/main_repo/.zombieben/workflows/*.yml");
+    expect(prompt).toContain("workflow_state.json");
+    expect(prompt).toContain("trigger.json");
+  });
+
+  it("includes the decision tree for NewWorkflow sub-outcomes", () => {
+    const prompt = buildTriageSystemPrompt();
+    expect(prompt).toContain("confirmation_required");
+    expect(prompt).toContain("high confidence");
+    expect(prompt).toContain("low confidence");
+  });
+
+  it("includes retry_fresh guidance for related failed runs", () => {
+    const prompt = buildTriageSystemPrompt();
+    expect(prompt).toContain("retry_fresh");
+    expect(prompt).toContain("including failed/completed runs");
+  });
+
+  it("includes JSON schema with all three outcome kinds", () => {
+    const prompt = buildTriageSystemPrompt();
+    expect(prompt).toContain('"new_workflow"');
+    expect(prompt).toContain('"in_progress_workflow_adjustment"');
+    expect(prompt).toContain('"immediate_response"');
+  });
+
+  it("includes the schema from types.ts", () => {
+    const prompt = buildTriageSystemPrompt();
+    expect(prompt).toContain('"oneOf"');
+    expect(prompt).toContain('"required"');
+  });
+});
 
 describe("buildTriagePrompt", () => {
   it("includes trigger text in the prompt", () => {
@@ -37,14 +72,7 @@ describe("buildTriagePrompt", () => {
     expect(prompt).toContain("slack:C123:1234.5678");
   });
 
-  it("includes file path patterns for workflows and runs", () => {
-    const prompt = buildTriagePrompt(makeTrigger());
-    expect(prompt).toContain("/home/test/.zombieben/repos/*/main_repo/.zombieben/workflows/*.yml");
-    expect(prompt).toContain("/home/test/.zombieben/repos/*/tasks/*/workflow_state.json");
-    expect(prompt).toContain("/home/test/.zombieben/repos/*/tasks/*/trigger.json");
-  });
-
-  it("includes thread history when present", () => {
+  it("includes context when present", () => {
     const prompt = buildTriagePrompt(makeTrigger({
       context: {
         allThreadMessages: [
@@ -53,26 +81,18 @@ describe("buildTriagePrompt", () => {
         ],
       },
     }));
-    expect(prompt).toContain("[1000.0] U1: first message");
-    expect(prompt).toContain("[1001.0] U2: second message");
+    expect(prompt).toContain("first message");
+    expect(prompt).toContain("second message");
   });
 
-  it("indicates no thread history for top-level messages", () => {
+  it("omits context line for top-level messages", () => {
     const prompt = buildTriagePrompt(makeTrigger());
-    expect(prompt).toContain("No thread history");
+    expect(prompt).not.toContain("**Context**");
   });
 
-  it("includes the decision tree for NewWorkflow sub-outcomes", () => {
+  it("does not include instructions or outcome types", () => {
     const prompt = buildTriagePrompt(makeTrigger());
-    expect(prompt).toContain("confirmation_required");
-    expect(prompt).toContain("high confidence");
-    expect(prompt).toContain("low confidence");
-  });
-
-  it("includes all three outcome type examples", () => {
-    const prompt = buildTriagePrompt(makeTrigger());
-    expect(prompt).toContain('"kind": "new_workflow"');
-    expect(prompt).toContain('"kind": "in_progress_workflow_adjustment"');
-    expect(prompt).toContain('"kind": "immediate_response"');
+    expect(prompt).not.toContain("Outcome Types");
+    expect(prompt).not.toContain("Output Format");
   });
 });

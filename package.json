@@ -1,6 +1,7 @@
 {
   "name": "zombieben",
   "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
   "description": "CLI tool for zombieben workflows",
   "bin": {
@@ -14,7 +15,8 @@
     "build": "tsc && tsc-alias",
     "lint": "eslint src/",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dev": "npm run build && zombieben runner start"
   },
   "dependencies": {
     "@slack/socket-mode": "^2.0.5",
