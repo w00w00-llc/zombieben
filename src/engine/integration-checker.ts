@@ -7,9 +7,8 @@ export function collectRequiredIntegrations(workflow: WorkflowDef): Set<string> 
   for (const step of workflow.steps) {
     if (step.kind !== "prompt" || !step.required_integrations) continue;
     for (const entry of step.required_integrations) {
-      for (const name of Object.keys(entry)) {
-        integrations.add(name);
-      }
+      const name = Object.keys(entry)[0];
+      if (name) integrations.add(name);
     }
   }
 

@@ -60,7 +60,7 @@ export async function initRun(
       throw new Error(
         `Workflow "${workflow.name}" requires integration ${names} but ${
           check.missing.length === 1 ? "it is" : "they are"
-        } not configured. Run "zombieben integrations setup <name>" to configure.`,
+        } not configured. Add the required keys to keys.json before running this workflow.`,
       );
     }
   }

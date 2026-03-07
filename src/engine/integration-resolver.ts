@@ -19,35 +19,36 @@ export function resolveIntegrationsForStep(
   }
 
   for (const entry of step.required_integrations) {
-    for (const name of Object.keys(entry)) {
-      const keys = getIntegrationKeys(name);
-      const config = getIntegrationConfig(name);
+    const name = Object.keys(entry)[0];
+    if (!name) continue;
 
-      // Env var fallback: always set if we have an api_key
-      if (keys?.api_key) {
-        const envVar = config?.env_var ?? `${name.toUpperCase()}_API_KEY`;
-        env[envVar] = keys.api_key;
-      }
+    const keys = getIntegrationKeys(name);
+    const config = getIntegrationConfig(name);
 
-      // MCP config: only if configured
-      if (config?.mcp) {
-        const resolvedEnv: Record<string, string> = {};
-        if (config.mcp.env && keys) {
-          for (const [envKey, envVal] of Object.entries(config.mcp.env)) {
-            if (envVal.startsWith("$") && keys[envVal.slice(1)]) {
-              resolvedEnv[envKey] = keys[envVal.slice(1)];
-            } else {
-              resolvedEnv[envKey] = envVal;
-            }
+    // Env var fallback: always set if we have an api_key
+    if (keys?.api_key) {
+      const envVar = config?.env_var ?? `${name.toUpperCase()}_API_KEY`;
+      env[envVar] = keys.api_key;
+    }
+
+    // MCP config: only if configured
+    if (config?.mcp) {
+      const resolvedEnv: Record<string, string> = {};
+      if (config.mcp.env && keys) {
+        for (const [envKey, envVal] of Object.entries(config.mcp.env)) {
+          if (envVal.startsWith("$") && keys[envVal.slice(1)]) {
+            resolvedEnv[envKey] = keys[envVal.slice(1)];
+          } else {
+            resolvedEnv[envKey] = envVal;
           }
         }
-
-        mcpConfigs[name] = {
-          command: config.mcp.command,
-          ...(config.mcp.args ? { args: config.mcp.args } : {}),
-          ...(Object.keys(resolvedEnv).length > 0 ? { env: resolvedEnv } : {}),
-        };
       }
+
+      mcpConfigs[name] = {
+        command: config.mcp.command,
+        ...(config.mcp.args ? { args: config.mcp.args } : {}),
+        ...(Object.keys(resolvedEnv).length > 0 ? { env: resolvedEnv } : {}),
+      };
     }
   }
 
