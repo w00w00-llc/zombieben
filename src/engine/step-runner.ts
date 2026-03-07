@@ -2,9 +2,12 @@ import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
-import type { WorkflowStepDef, ScriptStepDef } from "@/workflow/types/index.js";
-import type { TemplateContext } from "@/workflow/template.js";
-import { renderStepTodo } from "./todo-generator.js";
+import type { WorkflowDef, WorkflowStepDef, ScriptStepDef } from "./workflow-types.js";
+import type { TemplateContext } from "./workflow-template.js";
+import { createTodoMarkdown } from "./todo-generator.js";
+import type { CodingAgent } from "@/codingagents/index.js";
+import type { Logger } from "@/util/logger.js";
+import { resolveIntegrationsForStep } from "./integration-resolver.js";
 
 const execFile = promisify(execFileCb);
 
@@ -16,10 +19,11 @@ export interface StepResult {
 }
 
 export interface StepRunnerOpts {
-  chatCommand?: string;
+  agent: CodingAgent;
   workingDir: string;
   artifactsDir: string;
   dryRun?: boolean;
+  log?: Logger;
 }
 
 /**
@@ -49,21 +53,24 @@ export async function executeScriptStep(
 }
 
 /**
- * Execute a single workflow step by:
- * 1. Generating a TODO.md
+ * Execute a workflow step by:
+ * 1. Generating a TODO checklist from the workflow
  * 2. Running `claude -p` with the TODO content
  * 3. Reading the execution_result.json
  */
 export async function executeStep(
-  step: WorkflowStepDef,
+  workflow: WorkflowDef,
+  stepIndex: number,
   context: TemplateContext,
   opts: StepRunnerOpts
 ): Promise<StepResult> {
+  const step = workflow.steps[stepIndex];
+
   if (step.kind === "script") {
     return executeScriptStep(step, opts);
   }
 
-  const todo = renderStepTodo(step, context, opts.artifactsDir);
+  const todo = createTodoMarkdown(workflow, context, stepIndex);
 
   // Write TODO.md for debugging / audit trail
   const todoPath = path.join(opts.artifactsDir, "TODO.md");
@@ -74,13 +81,19 @@ export async function executeStep(
     return { success: true, summary: "Dry run — skipped execution" };
   }
 
-  const chatCommand = opts.chatCommand ?? "claude";
+  // Resolve integration config for this step
+  const integrations = resolveIntegrationsForStep(step);
 
   try {
-    await execFile(chatCommand, ["-p", todo], {
+    const handle = opts.agent.spawn({
+      prompt: todo,
+      readonly: false,
       cwd: opts.workingDir,
-      maxBuffer: 50 * 1024 * 1024, // 50MB
+      log: opts.log,
+      mcpConfigs: integrations.mcpConfigs,
+      env: integrations.env,
     });
+    await handle.done;
   } catch (err) {
     return {
       success: false,
