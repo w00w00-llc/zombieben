@@ -7,7 +7,6 @@ import type {
   PromptStepDef,
   ForLoopStepDef,
   ScriptStepDef,
-  WorkflowTriggers,
   WorktreeConfig,
   WorkflowInput,
   AwaitApproval,
@@ -38,21 +37,10 @@ export function parseWorkflow(yamlContent: string): WorkflowDef {
   return {
     name: raw.name as string,
     ...(raw.confirmation_required === true ? { confirmation_required: true } : {}),
-    triggers: raw.triggers ? parseTriggers(raw.triggers) : undefined,
     worktree: raw.worktree ? parseWorktreeConfig(raw.worktree) : undefined,
     inputs: raw.inputs ? parseInputs(raw.inputs as Record<string, unknown>) : undefined,
     steps: parseSteps(raw.steps as unknown[]),
   };
-}
-
-function parseTriggers(raw: unknown): WorkflowTriggers {
-  const obj = raw as Record<string, unknown>;
-  const triggers: WorkflowTriggers = {};
-
-  for (const [key, value] of Object.entries(obj)) {
-    (triggers as Record<string, unknown>)[key] = value;
-  }
-  return triggers;
 }
 
 function parseWorktreeConfig(raw: unknown): WorktreeConfig {
@@ -72,7 +60,6 @@ function parseInputs(raw: Record<string, unknown>): Record<string, WorkflowInput
       required: (obj.required as boolean) ?? false,
       type: (obj.type as WorkflowInput["type"]) ?? "string",
       ...(obj.default != null ? { default: obj.default as string | boolean | number } : {}),
-      ...(obj.autosynthesize != null ? { autosynthesize: obj.autosynthesize as boolean } : {}),
     };
   }
   return inputs;

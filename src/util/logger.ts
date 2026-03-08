@@ -1,5 +1,6 @@
 import fs from "node:fs";
-import { runnerLogPath } from "./paths.js";
+import path from "node:path";
+import { runnerDailyLogPath } from "./paths.js";
 
 export interface Logger {
   debug(message: string): void;
@@ -15,7 +16,6 @@ export interface CreateLoggerOpts {
 }
 
 export function createLogger(opts: CreateLoggerOpts = {}): Logger {
-  const filePath = opts.logFile ?? runnerLogPath();
   let tee = opts.tee ?? false;
 
   const colors: Record<string, string> = {
@@ -26,8 +26,15 @@ export function createLogger(opts: CreateLoggerOpts = {}): Logger {
   };
   const reset = "\x1b[0m";
 
+  function resolveLogFilePath(now: Date): string {
+    return opts.logFile ?? runnerDailyLogPath(now);
+  }
+
   function write(level: string, message: string): void {
-    const timestamp = new Date().toISOString();
+    const now = new Date();
+    const timestamp = now.toISOString();
+    const filePath = resolveLogFilePath(now);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
     const fileLine = `[${level}] [${timestamp}] ${message}\n`;
     fs.appendFileSync(filePath, fileLine);
     if (tee) {

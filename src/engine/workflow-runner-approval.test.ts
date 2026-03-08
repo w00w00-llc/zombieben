@@ -86,4 +86,21 @@ describe("advanceWorkflow approval gating", () => {
     expect(result.state.status).toBe("completed");
     expect(result.state.step_index).toBe(1);
   });
+
+  it("fails when todo is fully complete but intent is not aligned", () => {
+    const result = advanceWorkflow(
+      makeWorkflow(),
+      makeState(),
+      {
+        success: true,
+        todoFullyComplete: true,
+        intentAligned: false,
+        summary: "intent review missing",
+      },
+      { inputs: { plan_approval_required: true } },
+    );
+    expect(result.action).toBe("failed");
+    expect(result.state.status).toBe("failed");
+    expect(result.state.error).toContain("intent review missing");
+  });
 });

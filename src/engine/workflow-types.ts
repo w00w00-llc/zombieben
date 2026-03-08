@@ -4,7 +4,6 @@
 export interface WorkflowDef {
   name: string;
   confirmation_required?: boolean;
-  triggers?: WorkflowTriggers;
   worktree?: WorktreeConfig;
   inputs?: Record<string, WorkflowInput>;
   steps: WorkflowStepDef[];
@@ -12,14 +11,6 @@ export interface WorkflowDef {
   worktree_setup_start_index?: number;
   // Runtime metadata: number of worktree setup steps.
   worktree_setup_count?: number;
-}
-
-// --- Triggers ---
-
-export interface WorkflowTriggers {
-  slack?: unknown[];
-  github?: unknown[];
-  [key: string]: unknown[] | undefined;
 }
 
 // --- Worktree config (per-workflow) ---
@@ -36,7 +27,6 @@ export interface WorkflowInput {
   required: boolean;
   type: "string" | "boolean" | "number";
   default?: string | boolean | number;
-  autosynthesize?: boolean;
 }
 
 // --- Steps ---

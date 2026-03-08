@@ -38,6 +38,37 @@ describe("buildTriageSystemPrompt", () => {
     expect(prompt).toContain("including failed/completed runs");
   });
 
+  it("includes link-correlation and immediate_response guardrails", () => {
+    const prompt = buildTriageSystemPrompt();
+    expect(prompt).toContain("Follow links in the trigger message");
+    expect(prompt).toContain("correlate with local state");
+    expect(prompt).toContain("Search run trigger history");
+    expect(prompt).toContain('Never claim "no workflows configured"');
+    expect(prompt).toContain("avoid unverifiable capability claims");
+  });
+
+  it("includes inherit workflow validity checks", () => {
+    const prompt = buildTriageSystemPrompt();
+    expect(prompt).toContain("worktree.action: inherit");
+    expect(prompt).toContain("MUST provide a valid related `worktreeId`");
+    expect(prompt).toContain("do not return `new_workflow/run`");
+  });
+
+  it("includes output hardening script", () => {
+    const prompt = buildTriageSystemPrompt();
+    expect(prompt).toContain("Output Hardening Script");
+    expect(prompt).toContain("function harden(candidate, workflows, runs)");
+    expect(prompt).toContain("requireLinkCorrelationEvidence");
+  });
+
+  it("includes validateRun source-of-truth pointer and required behavior", () => {
+    const prompt = buildTriageSystemPrompt();
+    expect(prompt).toContain("Run validation logic");
+    expect(prompt).toContain("validate-run");
+    expect(prompt).toContain("evaluate your candidate output");
+    expect(prompt).toContain("would fail, adjust your output");
+  });
+
   it("includes JSON schema with all three outcome kinds", () => {
     const prompt = buildTriageSystemPrompt();
     expect(prompt).toContain('"new_workflow"');

@@ -48,8 +48,14 @@ describe("executeWorkflowSlice", () => {
 
     expect(result.success).toBe(true);
     expect(agent.calls).toHaveLength(1);
-    expect(agent.calls[0].prompt).toBe(
+    expect(agent.calls[0].prompt).toContain(
       `Execute the steps in ${path.join(artifactsDir, "TODO.md")}`,
+    );
+    expect(agent.calls[0].prompt).toContain(
+      `Use run intent file: ${path.join(root, "user_intent.md")}`,
+    );
+    expect(agent.calls[0].prompt).toContain(
+      `write intent review to: ${path.join(artifactsDir, "intent-review.md")}`,
     );
     expect(agent.calls[0].systemPrompt).toBe(EXECUTE_TODOS_SYSTEM_PROMPT);
     expect(agent.calls[0].outputFormat).toBe("stream-json");
@@ -117,6 +123,21 @@ describe("executeWorkflowSlice", () => {
         "- [ ] Failure handler",
       ].join("\n"),
     );
+    fs.writeFileSync(
+      path.join(artifactsDir, "intent-review.md"),
+      [
+        "## Intent Alignment",
+        "",
+        "### Fulfilled Requirements",
+        "- Req 1",
+        "",
+        "### Deviations",
+        "None",
+        "",
+        "### Evidence",
+        "- src/file.ts",
+      ].join("\n"),
+    );
 
     const workflow: WorkflowDef = {
       name: "Test",
@@ -138,5 +159,39 @@ describe("executeWorkflowSlice", () => {
     });
 
     expect(result.todoFullyComplete).toBe(true);
+    expect(result.intentAligned).toBe(true);
+  });
+
+  it("fails completion when TODO is done but intent review is missing", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "zombieben-step-runner-"));
+    const workingDir = path.join(root, "worktree");
+    const artifactsDir = path.join(root, "artifacts");
+    fs.mkdirSync(workingDir, { recursive: true });
+    fs.mkdirSync(artifactsDir, { recursive: true });
+
+    fs.writeFileSync(path.join(artifactsDir, "TODO.md"), "- [x] Task A\n");
+
+    const workflow: WorkflowDef = {
+      name: "Test",
+      steps: [{ kind: "prompt", name: "do", prompt: "Do the thing" }],
+    };
+    const context: TemplateContext = {
+      inputs: {},
+      artifacts: {},
+      skills: {},
+      worktree: { id: "wt-1", path: workingDir },
+      zombieben: { repo_slug: "org--repo", trigger: "/tmp/trigger.json" },
+    };
+    const agent = new RecordingAgent();
+
+    const result = await executeWorkflowSlice(workflow, 0, context, {
+      agent,
+      workingDir,
+      artifactsDir,
+    });
+
+    expect(result.todoFullyComplete).toBe(true);
+    expect(result.intentAligned).toBe(false);
+    expect(result.success).toBe(false);
   });
 });

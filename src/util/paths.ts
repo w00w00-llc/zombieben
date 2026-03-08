@@ -112,6 +112,17 @@ export function runnerLogPath(): string {
   return path.join(zombiebenDir(), "runner.log");
 }
 
+export function runnerLogsDir(): string {
+  return path.join(zombiebenDir(), "runner-logs");
+}
+
+export function runnerDailyLogPath(date: Date = new Date()): string {
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  return path.join(runnerLogsDir(), `${yyyy}-${mm}-${dd}.log`);
+}
+
 export function runLogPath(repoSlug: string, worktreeId: string, runId: string): string {
   return path.join(runDir(repoSlug, worktreeId, runId), "run.log");
 }

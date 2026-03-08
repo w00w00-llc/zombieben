@@ -19,7 +19,7 @@ import type { IngestorChannel } from "@/ingestor/ingestor-channel.js";
 import type { CodingAgent } from "@/codingagents/index.js";
 import type { Trigger } from "@/ingestor/trigger.js";
 import type { TriggerResponder } from "@/responder/responder.js";
-import type { TriageResult } from "./init-run.js";
+import type { RunInitRequest } from "./init-run.js";
 import type { WorkflowRunState } from "@/engine/workflow-run-state.js";
 import { parseWorkflow } from "@/engine/workflow-parser.js";
 import type { InProgressWorkflowAdjustment, TriageOutcome } from "@/triage/types.js";
@@ -243,7 +243,7 @@ function isRetryFreshAdjustment(
 function buildRetryContext(
   outcome: Awaited<ReturnType<typeof triageTrigger>>,
   retryResolution: NonNullable<ReturnType<typeof presentOutcome>["retryResolution"]>,
-): TriageResult & { workflow: { confirmation_required?: boolean } } {
+): RunInitRequest & { workflow: { confirmation_required?: boolean } } {
   if (!isRetryFreshAdjustment(outcome)) {
     throw new Error("Expected retry_fresh triage outcome");
   }

@@ -23,10 +23,13 @@ Under `~/.zombieben/repos/{repoSlug}/tasks/{worktreeId}/runs/{runId}/`:
 
 - `workflow_state.json`
 - `trigger.json`
+- `inputs.json`
+- `user_intent.md`
 - `run.log`
 - `artifacts/`
   - `TODO.md`
   - `workflow.resolved.yml`
+  - `intent-review.md`
   - `step-XXX-claude.stdout.log`
   - `step-XXX-claude.stderr.log`
 

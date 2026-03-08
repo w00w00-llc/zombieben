@@ -171,7 +171,8 @@ describe("triageTrigger", () => {
     const opts = (agent.spawn as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(opts.readonly).toBe(true);
     expect(opts.outputFormat).toBe("stream-json");
-    expect(opts.addDirs).toEqual(["/home/test/.zombieben/repos"]);
+    expect(opts.addDirs[0]).toBe("/home/test/.zombieben/repos");
+    expect(opts.addDirs).toHaveLength(2);
     expect(opts.systemPrompt).toBeDefined();
     expect(opts.prompt).toBeDefined();
   });

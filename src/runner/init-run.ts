@@ -2,22 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
 import type { Trigger } from "@/ingestor/trigger.js";
-import { parseWorkflow } from "@/engine/workflow-parser.js";
 import { initWorkflowRunState } from "@/engine/workflow-runner.js";
 import {
   mainRepoDir,
-  repoWorkflowsDir,
-  worktreeDir,
   worktreeRepoDir,
   runDir,
   runArtifactsDir,
   runStatePath,
 } from "@/util/paths.js";
 import { createWorktree } from "@/engine/worktree.js";
-import {
-  collectRequiredIntegrations,
-  checkRequiredIntegrations,
-} from "@/engine/integration-checker.js";
 import { log } from "@/util/logger.js";
 import { syncRepo, rebaseWorktreeOntoDefaultBranch } from "./repo-sync.js";
 import { prepareWorkflowForRun } from "./runtime-workflow.js";
@@ -25,8 +18,9 @@ import { extractArtifactNames, resolveTemplate } from "@/engine/workflow-templat
 import type { TemplateContext } from "@/engine/workflow-template.js";
 import type { WorkflowDef } from "@/engine/workflow-types.js";
 import { createTodoMarkdown } from "@/engine/todo-generator.js";
+import { validateRun } from "./validate-run.js";
 
-export interface TriageResult {
+export interface RunInitRequest {
   repoSlug: string;
   workflowFile: string;
   workflowName: string;
@@ -52,54 +46,17 @@ function makeTimestampSlug(name: string): string {
 }
 
 export async function initRun(
-  triageResult: TriageResult,
+  runInitRequest: RunInitRequest,
   trigger: Trigger,
 ): Promise<InitRunResult> {
-  const { repoSlug, workflowFile, inputs } = triageResult;
-
-  // Read and parse workflow definition
-  const workflowPath = path.join(repoWorkflowsDir(repoSlug), workflowFile);
-  if (!fs.existsSync(workflowPath)) {
-    throw new Error(`Workflow file not found: ${workflowPath}`);
-  }
-  const workflowContent = fs.readFileSync(workflowPath, "utf-8");
-  const parsedWorkflow = parseWorkflow(workflowContent);
-
-  // Validate required integrations
-  const required = collectRequiredIntegrations(parsedWorkflow);
-  if (required.size > 0) {
-    const check = checkRequiredIntegrations(required);
-    if (!check.ok) {
-      const names = check.missing.map((n) => `"${n}"`).join(", ");
-      throw new Error(
-        `Workflow "${parsedWorkflow.name}" requires integration ${names} but ${
-          check.missing.length === 1 ? "it is" : "they are"
-        } not configured. Add the required keys to keys.json before running this workflow.`,
-      );
-    }
-  }
-
-  const action = parsedWorkflow.worktree?.action ?? "create";
+  const { repoSlug, workflowFile, inputs } = runInitRequest;
+  const { workflow: parsedWorkflow, action } = validateRun(runInitRequest);
 
   let worktreeId: string;
   let runId: string;
 
   if (action === "inherit") {
-    if (!triageResult.worktreeId) {
-      throw new Error(
-        `Workflow "${parsedWorkflow.name}" has worktree.action "inherit" but no worktreeId was provided`,
-      );
-    }
-    worktreeId = triageResult.worktreeId;
-
-    // Verify the worktree directory exists
-    const wtDir = worktreeDir(repoSlug, worktreeId);
-    if (!fs.existsSync(wtDir)) {
-      throw new Error(
-        `Worktree directory does not exist for inherit: ${wtDir}`,
-      );
-    }
-
+    worktreeId = runInitRequest.worktreeId!;
     runId = makeTimestampSlug(parsedWorkflow.name);
   } else {
     // "create" (default)
@@ -129,6 +86,10 @@ export async function initRun(
   // Write full trigger payload for run history/debugging.
   const triggerPath = path.join(rDir, "trigger.json");
   fs.writeFileSync(triggerPath, JSON.stringify(trigger, null, 2));
+  const inputsPath = path.join(rDir, "inputs.json");
+  fs.writeFileSync(inputsPath, JSON.stringify(inputs, null, 2));
+  const userIntentPath = path.join(rDir, "user_intent.md");
+  fs.writeFileSync(userIntentPath, buildUserIntentDoc(trigger, inputs));
 
   // Pre-populate artifact paths so they resolve in workflow snapshot.
   const artifacts = buildDeterministicArtifactMap(workflow, artifactsDir);
@@ -168,6 +129,96 @@ export async function initRun(
   );
 
   return { repoSlug, worktreeId, runId };
+}
+
+function buildUserIntentDoc(
+  trigger: Trigger,
+  inputs: Record<string, string>,
+): string {
+  const originalRequest = extractOriginalRequest(trigger);
+  const captureTime = new Date().toISOString();
+  const contextSection =
+    trigger.context == null
+      ? "_none_"
+      : `\`\`\`json\n${JSON.stringify(trigger.context, null, 2)}\n\`\`\``;
+  return [
+    "# User Intent",
+    "",
+    `Captured At: ${captureTime}`,
+    `Trigger Source: ${trigger.source}`,
+    `Trigger ID: ${trigger.id}`,
+    "",
+    "## Original Human Request (Verbatim)",
+    "",
+    originalRequest,
+    "",
+    "## Inputs",
+    "",
+    "```json",
+    JSON.stringify(inputs, null, 2),
+    "```",
+    "",
+    "## Trigger Context",
+    "",
+    contextSection,
+    "",
+  ].join("\n");
+}
+
+function extractOriginalRequest(trigger: Trigger): string {
+  if (typeof trigger.raw_payload === "object" && trigger.raw_payload !== null) {
+    const raw = trigger.raw_payload as Record<string, unknown>;
+    const direct = firstNonEmptyString([
+      raw.text,
+      raw.body,
+      getNested(raw, ["comment", "body"]),
+      getNested(raw, ["issue", "body"]),
+      getNested(raw, ["pull_request", "body"]),
+      getNested(raw, ["head_commit", "message"]),
+    ]);
+    const title = firstNonEmptyString([
+      getNested(raw, ["issue", "title"]),
+      getNested(raw, ["pull_request", "title"]),
+    ]);
+    if (title && direct) {
+      return `${title}\n\n${direct}`.trim();
+    }
+    if (direct) return direct;
+    if (title) return title;
+  }
+
+  if (typeof trigger.context === "object" && trigger.context !== null) {
+    const ctx = trigger.context as Record<string, unknown>;
+    const msgs = ctx.allThreadMessages;
+    if (Array.isArray(msgs)) {
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        const msg = msgs[i];
+        if (!msg || typeof msg !== "object") continue;
+        const text = (msg as Record<string, unknown>).text;
+        if (typeof text === "string" && text.trim()) {
+          return text.trim();
+        }
+      }
+    }
+  }
+
+  return "_unavailable_";
+}
+
+function getNested(obj: Record<string, unknown>, keys: string[]): unknown {
+  let cur: unknown = obj;
+  for (const key of keys) {
+    if (!cur || typeof cur !== "object") return undefined;
+    cur = (cur as Record<string, unknown>)[key];
+  }
+  return cur;
+}
+
+function firstNonEmptyString(values: unknown[]): string | undefined {
+  for (const v of values) {
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return undefined;
 }
 
 function resolveWorkflowTemplates(

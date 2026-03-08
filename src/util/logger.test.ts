@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createLogger } from "./logger.js";
+import { runnerDailyLogPath } from "./paths.js";
 
 describe("createLogger", () => {
   let tmpDir: string;
@@ -14,6 +15,8 @@ describe("createLogger", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -76,5 +79,34 @@ describe("createLogger", () => {
 
     stdoutSpy.mockRestore();
     stderrSpy.mockRestore();
+  });
+
+  it("defaults to daily runner log path", () => {
+    vi.stubEnv("ZOMBIEBEN_RUNNER_DIR", tmpDir);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-08T12:00:00.000Z"));
+    const logger = createLogger();
+
+    logger.info("daily default");
+
+    const expectedPath = runnerDailyLogPath(new Date("2026-03-08T12:00:00.000Z"));
+    expect(fs.existsSync(expectedPath)).toBe(true);
+    expect(fs.readFileSync(expectedPath, "utf-8")).toContain("daily default");
+  });
+
+  it("rotates default daily runner log path across day boundary", () => {
+    vi.stubEnv("ZOMBIEBEN_RUNNER_DIR", tmpDir);
+    vi.useFakeTimers();
+    const logger = createLogger();
+
+    vi.setSystemTime(new Date("2026-03-08T23:59:59.000Z"));
+    logger.info("before midnight");
+    vi.setSystemTime(new Date("2026-03-09T00:00:01.000Z"));
+    logger.info("after midnight");
+
+    const day1 = runnerDailyLogPath(new Date("2026-03-08T23:59:59.000Z"));
+    const day2 = runnerDailyLogPath(new Date("2026-03-09T00:00:01.000Z"));
+    expect(fs.readFileSync(day1, "utf-8")).toContain("before midnight");
+    expect(fs.readFileSync(day2, "utf-8")).toContain("after midnight");
   });
 });

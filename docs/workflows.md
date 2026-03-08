@@ -12,6 +12,11 @@ Core fields:
 - `inputs`
 - `steps`
 
+Notes:
+
+- Workflows do not define trigger routing. Workflow selection is triage-driven.
+- Legacy top-level `triggers:` keys are ignored.
+
 ## Step Types
 
 - Prompt step (`prompt`)

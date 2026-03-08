@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import yaml from "js-yaml";
 import { initRun } from "./init-run.js";
-import type { TriageResult } from "./init-run.js";
+import type { RunInitRequest } from "./init-run.js";
 import type { Trigger } from "@/ingestor/trigger.js";
 import { createWorktree } from "../engine/worktree.js";
 import { syncRepo, rebaseWorktreeOntoDefaultBranch } from "./repo-sync.js";
@@ -55,8 +55,8 @@ describe("initRun", () => {
     vi.clearAllMocks();
   });
 
-  it("creates directory structure with runs/{runId}/workflow_state.json and trigger.json", async () => {
-    const triageResult: TriageResult = {
+  it("creates directory structure with runs/{runId}/workflow_state.json, trigger.json, inputs.json, and user_intent.md", async () => {
+    const triageResult: RunInitRequest = {
       repoSlug: "my-org--my-repo",
       workflowFile: "fix-bug.yml",
       workflowName: "Fix Bug",
@@ -102,6 +102,21 @@ describe("initRun", () => {
     const triggerData = JSON.parse(fs.readFileSync(triggerPath, "utf-8"));
     expect(triggerData).toEqual(trigger);
 
+    // Check inputs.json
+    const inputsPath = path.join(runDir, "inputs.json");
+    expect(fs.existsSync(inputsPath)).toBe(true);
+    const inputsData = JSON.parse(fs.readFileSync(inputsPath, "utf-8"));
+    expect(inputsData).toEqual({ issue: "123" });
+
+    // Check user_intent.md
+    const intentPath = path.join(runDir, "user_intent.md");
+    expect(fs.existsSync(intentPath)).toBe(true);
+    const intent = fs.readFileSync(intentPath, "utf-8");
+    expect(intent).toContain("# User Intent");
+    expect(intent).toContain("## Original Human Request (Verbatim)");
+    expect(intent).toContain("hello");
+    expect(intent).toContain("\"issue\": \"123\"");
+
     // Check resolved workflow snapshot in artifacts
     const resolvedWorkflowPath = path.join(
       runDir,
@@ -139,7 +154,7 @@ describe("initRun", () => {
     );
     fs.mkdirSync(wtDir, { recursive: true });
 
-    const triageResult: TriageResult = {
+    const triageResult: RunInitRequest = {
       repoSlug: "my-org--my-repo",
       workflowFile: "followup.yml",
       workflowName: "Follow Up",
@@ -178,7 +193,7 @@ describe("initRun", () => {
   });
 
   it("throws when inherit worktree does not exist", async () => {
-    const triageResult: TriageResult = {
+    const triageResult: RunInitRequest = {
       repoSlug: "my-org--my-repo",
       workflowFile: "followup.yml",
       workflowName: "Follow Up",
@@ -200,7 +215,7 @@ describe("initRun", () => {
   });
 
   it("throws when inherit is used without worktreeId", async () => {
-    const triageResult: TriageResult = {
+    const triageResult: RunInitRequest = {
       repoSlug: "my-org--my-repo",
       workflowFile: "followup.yml",
       workflowName: "Follow Up",
@@ -221,7 +236,7 @@ describe("initRun", () => {
   });
 
   it("throws when workflow file does not exist", async () => {
-    const triageResult: TriageResult = {
+    const triageResult: RunInitRequest = {
       repoSlug: "my-org--my-repo",
       workflowFile: "nonexistent.yml",
       workflowName: "Missing",
@@ -256,7 +271,7 @@ describe("initRun", () => {
       `name: Needs Linear\nsteps:\n  - name: fetch\n    prompt: Fetch issues\n    required_integrations:\n      - linear:\n`,
     );
 
-    const triageResult: TriageResult = {
+    const triageResult: RunInitRequest = {
       repoSlug: "my-org--my-repo",
       workflowFile: "needs-linear.yml",
       workflowName: "Needs Linear",
@@ -296,7 +311,7 @@ describe("initRun", () => {
       JSON.stringify({ linear: { api_key: "test-key" } }),
     );
 
-    const triageResult: TriageResult = {
+    const triageResult: RunInitRequest = {
       repoSlug: "my-org--my-repo",
       workflowFile: "needs-linear.yml",
       workflowName: "Needs Linear",
@@ -313,5 +328,42 @@ describe("initRun", () => {
 
     const result = await initRun(triageResult, trigger);
     expect(result.repoSlug).toBe("my-org--my-repo");
+  });
+
+  it("captures user intent from GitHub-style title/body fields", async () => {
+    const triageResult: RunInitRequest = {
+      repoSlug: "my-org--my-repo",
+      workflowFile: "fix-bug.yml",
+      workflowName: "Fix Bug",
+      inputs: { issue: "456" },
+    };
+
+    const trigger: Trigger = {
+      source: "github",
+      id: "github-evt-1",
+      groupKeys: ["github:org/repo:1"],
+      timestamp: new Date().toISOString(),
+      raw_payload: {
+        issue: {
+          title: "Fix flaky test",
+          body: "Please stabilize the integration test.",
+        },
+      },
+    };
+
+    const result = await initRun(triageResult, trigger);
+    const intentPath = path.join(
+      TEST_DIR,
+      "repos",
+      "my-org--my-repo",
+      "tasks",
+      result.worktreeId,
+      "runs",
+      result.runId,
+      "user_intent.md",
+    );
+    const intent = fs.readFileSync(intentPath, "utf-8");
+    expect(intent).toContain("Fix flaky test");
+    expect(intent).toContain("Please stabilize the integration test.");
   });
 });

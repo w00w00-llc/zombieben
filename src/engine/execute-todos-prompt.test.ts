@@ -8,4 +8,10 @@ describe("EXECUTE_TODOS_SYSTEM_PROMPT", () => {
       "stop immediately, and exit successfully without running later TODO items",
     );
   });
+
+  it("requires user intent and intent review output", () => {
+    expect(EXECUTE_TODOS_SYSTEM_PROMPT).toContain("user_intent.md");
+    expect(EXECUTE_TODOS_SYSTEM_PROMPT).toContain("intent-review.md");
+    expect(EXECUTE_TODOS_SYSTEM_PROMPT).toContain("### Deviations");
+  });
 });

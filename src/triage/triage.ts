@@ -1,6 +1,8 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Trigger } from "@/ingestor/trigger.js";
 import type { TriageOutcome } from "./types.js";
 import { buildTriageSystemPrompt, buildTriagePrompt } from "./prompt.js";
@@ -64,6 +66,7 @@ export async function triageTrigger(
 
   const start = Date.now();
   log.info(`Invoking claude for triage (trigger ${trigger.id})...`);
+  const triageCodeRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
   // Write prompts to temp files for manual debugging
   const debugDir = join(tmpdir(), "zombieben-triage");
@@ -72,13 +75,13 @@ export async function triageTrigger(
   const promptPath = join(debugDir, `debug-prompt-${trigger.id}.txt`);
   writeFileSync(systemPromptPath, systemPrompt);
   writeFileSync(promptPath, prompt);
-  log.debug(`Test the triage prompt by running: cat ${promptPath} | claude -p - --verbose --system-prompt "$(cat ${systemPromptPath})" --tools Read,Glob,Grep --dangerously-skip-permissions --add-dir ${reposDir()} --output-format stream-json`);
+  log.debug(`Test the triage prompt by running: cat ${promptPath} | claude -p - --verbose --system-prompt "$(cat ${systemPromptPath})" --tools Read,Glob,Grep --dangerously-skip-permissions --add-dir ${reposDir()} --add-dir ${triageCodeRoot} --output-format stream-json`);
 
   const handle = opts.agent.spawn({
     prompt,
     systemPrompt,
     readonly: true,
-    addDirs: [reposDir()],
+    addDirs: [reposDir(), triageCodeRoot],
     outputFormat: "stream-json",
     log,
   });

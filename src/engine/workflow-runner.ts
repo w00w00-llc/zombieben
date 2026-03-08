@@ -24,6 +24,7 @@ export interface StepResult {
   failures?: string[];
   artifacts?: string[];
   todoFullyComplete?: boolean;
+  intentAligned?: boolean;
 }
 
 export interface StepRunnerOpts {
@@ -85,8 +86,15 @@ export async function executeWorkflowSlice(
 
   try {
     const stepLogPrefix = `step-${String(stepIndex).padStart(3, "0")}`;
+    const runDir = path.resolve(opts.artifactsDir, "..");
+    const userIntentPath = path.join(runDir, "user_intent.md");
+    const intentReviewPath = path.join(opts.artifactsDir, "intent-review.md");
     const handle = opts.agent.spawn({
-      prompt: `Execute the steps in ${todoPath}`,
+      prompt: [
+        `Execute the steps in ${todoPath}`,
+        `Use run intent file: ${userIntentPath}`,
+        `When main tasks are complete, write intent review to: ${intentReviewPath}`,
+      ].join("\n"),
       systemPrompt: EXECUTE_TODOS_SYSTEM_PROMPT,
       readonly: false,
       cwd: opts.workingDir,
@@ -108,6 +116,14 @@ export async function executeWorkflowSlice(
   const result = readExecutionResult(opts.artifactsDir);
   if (result.todoFullyComplete == null) {
     result.todoFullyComplete = isMainTodoFullyComplete(todoPath);
+  }
+  if (result.todoFullyComplete) {
+    result.intentAligned = isIntentAligned(opts.artifactsDir);
+    if (!result.intentAligned && result.success) {
+      result.success = false;
+      result.summary =
+        "Main TODO appears complete, but artifacts/intent-review.md is missing or reports deviations.";
+    }
   }
   return result;
 }
@@ -140,6 +156,33 @@ function isMainTodoFullyComplete(todoPath: string): boolean {
     const mark = (m[1] ?? "").toLowerCase();
     return mark === "x" || mark === "s";
   });
+}
+
+function isIntentAligned(artifactsDir: string): boolean {
+  const reviewPath = path.join(artifactsDir, "intent-review.md");
+  let content: string;
+  try {
+    content = fs.readFileSync(reviewPath, "utf-8");
+  } catch {
+    return false;
+  }
+
+  const hasHeader = /(^|\n)##\s+Intent Alignment\b/i.test(content);
+  const hasFulfilled = /(^|\n)###\s+Fulfilled Requirements\b/i.test(content);
+  const hasDeviations = /(^|\n)###\s+Deviations\b/i.test(content);
+  const hasEvidence = /(^|\n)###\s+Evidence\b/i.test(content);
+  if (!(hasHeader && hasFulfilled && hasDeviations && hasEvidence)) {
+    return false;
+  }
+
+  const deviationsMatch = content.match(
+    /###\s+Deviations[\s\S]*?(?=\n###\s+|\s*$)/i,
+  );
+  if (!deviationsMatch) return false;
+  const deviationsBody = deviationsMatch[0]
+    .replace(/###\s+Deviations/i, "")
+    .trim();
+  return /^none[.\s]*$/i.test(deviationsBody);
 }
 
 // --- Pure state machine ---
@@ -204,6 +247,19 @@ function toNextStep(
   log?: Logger,
 ): AdvanceResult {
   if (stepResult.todoFullyComplete) {
+    if (stepResult.intentAligned === false) {
+      return {
+        action: "failed",
+        state: {
+          ...state,
+          status: "failed",
+          error:
+            stepResult.summary
+            ?? "Run cannot complete: intent-review.md is missing or contains deviations.",
+          updated_at: new Date().toISOString(),
+        },
+      };
+    }
     const lastIndex = Math.max(0, workflow.steps.length - 1);
     const lastStep = workflow.steps[lastIndex];
     return {
@@ -234,6 +290,20 @@ function toNextStep(
   }
 
   if (nextIndex >= workflow.steps.length) {
+    if (stepResult.intentAligned === false) {
+      return {
+        action: "failed",
+        state: {
+          ...state,
+          status: "failed",
+          artifacts: updatedArtifacts,
+          error:
+            stepResult.summary
+            ?? "Run cannot complete: intent-review.md is missing or contains deviations.",
+          updated_at: new Date().toISOString(),
+        },
+      };
+    }
     return {
       action: "completed",
       state: {

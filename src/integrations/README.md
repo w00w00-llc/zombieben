@@ -2,7 +2,7 @@
 
 Integrations are external services that plug into ZombieBen's architecture. Each integration can fill one or more of three roles:
 
-- **Triggers** — Ingestor channels that listen for external events and produce `Trigger` objects (e.g. Slack Socket Mode, GitHub webhook polling)
+- **Triggers** — Ingestor channels that listen for external events and produce `Trigger` objects (e.g. Slack Socket Mode, GitHub webhooks/polling)
 - **Notifications** — Responders that send messages back to users (e.g. Slack thread replies, emoji reactions)
 - **Workflow tooling** — Services called from within workflow steps (e.g. GitHub PR creation, Linear issue fetching)
 
