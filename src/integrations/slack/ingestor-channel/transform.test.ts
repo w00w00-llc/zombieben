@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { transformSlackEvent } from "./transform.js";
+import { normalizeSlackEvent, transformSlackEvent } from "./transform.js";
 
 describe("transformSlackEvent", () => {
   it("transforms a valid event into a Trigger", () => {
@@ -56,6 +56,56 @@ describe("transformSlackEvent", () => {
       subtype: "bot_message",
     });
     expect(result).toBeNull();
+  });
+
+  it("normalizes message_replied envelopes to the nested reply", () => {
+    const result = normalizeSlackEvent({
+      type: "message",
+      subtype: "message_replied",
+      channel: "C123",
+      ts: "1700000000.000000",
+      message: {
+        channel: "IGNORED",
+        ts: "1700000001.000000",
+        thread_ts: "1700000000.000000",
+        user: "U456",
+        text: "<@U_BOT> reply in thread",
+      },
+    });
+
+    expect(result).toEqual({
+      channel: "C123",
+      ts: "1700000001.000000",
+      thread_ts: "1700000000.000000",
+      user: "U456",
+      text: "<@U_BOT> reply in thread",
+    });
+  });
+
+  it("transforms message_replied envelopes using the nested reply ts", () => {
+    const result = transformSlackEvent({
+      type: "message",
+      subtype: "message_replied",
+      channel: "C123",
+      ts: "1700000000.000000",
+      message: {
+        ts: "1700000001.000000",
+        thread_ts: "1700000000.000000",
+        user: "U456",
+        text: "<@U_BOT> reply in thread",
+      },
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.id).toBe("slack-C123-1700000001.000000");
+    expect(result!.groupKeys).toEqual(["slack:C123:1700000000.000000"]);
+    expect(result!.raw_payload).toEqual({
+      channel: "C123",
+      ts: "1700000001.000000",
+      thread_ts: "1700000000.000000",
+      user: "U456",
+      text: "<@U_BOT> reply in thread",
+    });
   });
 
   it("generates deterministic ID from channel and ts", () => {

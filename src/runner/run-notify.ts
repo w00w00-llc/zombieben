@@ -1,6 +1,6 @@
 import { runDir } from "@/util/paths.js";
 import { log } from "@/util/logger.js";
-import type { TriggerResponder } from "@/responder/responder.js";
+import type { SendMessageOptions, TriggerResponder } from "@/responder/responder.js";
 import type { TriageOutcome } from "@/triage/types.js";
 import {
   instantiateRunResponders,
@@ -40,16 +40,17 @@ export async function sendRunMessage(
   run: RunRef,
   message: string,
   fallback?: TriggerResponder,
+  options: SendMessageOptions = {},
 ): Promise<void> {
   const responders = loadInstantiatedResponders(run);
   if (responders.length === 0) {
-    await fallback?.send(message);
+    await fallback?.send(message, options);
     return;
   }
 
   for (const entry of responders) {
     try {
-      await entry.responder.send(message);
+      await entry.responder.send(message, options);
     } catch (err) {
       log.error(
         `Failed sending run message via ${entry.channelKey}: ${(err as Error).message}`,

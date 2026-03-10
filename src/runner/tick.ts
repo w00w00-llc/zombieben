@@ -15,12 +15,13 @@ import {
   runLogPath,
 } from "@/util/paths.js";
 import type { TemplateContext } from "@/engine/workflow-template.js";
-import { extractArtifactNames } from "@/engine/workflow-template.js";
+import { extractArtifactNames, resolveTemplate } from "@/engine/workflow-template.js";
 import type { CodingAgent } from "@/codingagents/index.js";
 import type { WorkflowDef } from "@/engine/workflow-types.js";
 import path from "node:path";
 import { log, createLogger } from "@/util/logger.js";
 import { prepareWorkflowForRun } from "./runtime-workflow.js";
+import { sendRunMessage } from "./run-notify.js";
 
 let _agent: CodingAgent | undefined;
 
@@ -117,6 +118,22 @@ async function processRun(run: ActiveRun): Promise<void> {
   runLog.info(
     `${repoSlug}/${worktreeId}/${runId}: ${state.step_name} → ${action} (${nextState.status})`
   );
+
+  if (action === "awaiting_approval") {
+    const approvalRequest = buildAwaitApprovalRequest(
+      workflow,
+      nextState.step_index,
+      context,
+      workingDir,
+      runLog,
+    );
+    await sendRunMessage(
+      { repoSlug, worktreeId, runId },
+      approvalRequest.message,
+      undefined,
+      { attachments: approvalRequest.attachments },
+    );
+  }
 }
 
 function collectArtifactNames(workflow: WorkflowDef): string[] {
@@ -169,4 +186,71 @@ function discoverSkills(repoDir: string): Record<string, string> {
   }
 
   return skills;
+}
+
+function buildAwaitApprovalRequest(
+  workflow: WorkflowDef,
+  stepIndex: number,
+  context: TemplateContext,
+  workingDir: string,
+  runLog: ReturnType<typeof createLogger>,
+): { message: string; attachments: string[] } {
+  const step = workflow.steps[stepIndex];
+  if (!step || step.kind !== "prompt") {
+    return {
+      message: "Awaiting approval. Reply with approval or requested changes.",
+      attachments: [],
+    };
+  }
+
+  const requested = (step.await_approval?.attachments ?? [])
+    .map((attachment) => resolveTemplate(attachment, context).trim())
+    .filter(Boolean);
+  const { attachments, missing } = resolveExistingAttachments(requested, workingDir);
+
+  for (const missingAttachment of missing) {
+    runLog.warn(`Approval attachment missing or not a file: ${missingAttachment}`);
+  }
+
+  const lines = [
+    `Awaiting approval for step "${step.name}".`,
+    "Reply with approval or requested changes to continue the run.",
+  ];
+  if (missing.length > 0) {
+    lines.push(`Missing attachments: ${missing.map((file) => `\`${file}\``).join(", ")}`);
+  }
+
+  return {
+    message: lines.join("\n"),
+    attachments,
+  };
+}
+
+function resolveExistingAttachments(
+  requested: readonly string[],
+  workingDir: string,
+): { attachments: string[]; missing: string[] } {
+  const seen = new Set<string>();
+  const attachments: string[] = [];
+  const missing: string[] = [];
+
+  for (const candidate of requested) {
+    const resolved = path.isAbsolute(candidate)
+      ? candidate
+      : path.resolve(workingDir, candidate);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+
+    try {
+      if (fs.statSync(resolved).isFile()) {
+        attachments.push(resolved);
+      } else {
+        missing.push(resolved);
+      }
+    } catch {
+      missing.push(resolved);
+    }
+  }
+
+  return { attachments, missing };
 }

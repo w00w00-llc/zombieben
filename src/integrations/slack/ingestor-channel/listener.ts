@@ -1,20 +1,9 @@
 import { SocketModeClient } from "@slack/socket-mode";
 import { createSlackWebClient } from "../web-client.js";
 import type { Ingestor } from "@/ingestor/ingestor.js";
-import { transformSlackEvent } from "./transform.js";
+import { normalizeSlackEvent, transformSlackEvent } from "./transform.js";
 import { fetchSlackThreadContext } from "./context.js";
 import { log } from "@/util/logger.js";
-
-interface MessageEvent {
-  type: string;
-  channel: string;
-  ts: string;
-  thread_ts?: string;
-  user: string;
-  text: string;
-  bot_id?: string;
-  subtype?: string;
-}
 
 interface SocketModeEventArgs {
   event: unknown;
@@ -38,7 +27,7 @@ export class SlackSocketListener {
 
     const registerSlackEvent = (eventName: "message" | "app_mention") => this.socketClient.on(eventName, async ({ event, ack }: SocketModeEventArgs) => {
       await ack();
-      this.handleMessage(event as MessageEvent, eventName);
+      this.handleMessage(event, eventName);
     });
     registerSlackEvent("message");
     registerSlackEvent("app_mention");
@@ -80,27 +69,30 @@ export class SlackSocketListener {
   }
 
   private async handleMessage(
-    event: MessageEvent,
+    event: unknown,
     eventType: "message" | "app_mention",
   ): Promise<void> {
+    const normalizedEvent = normalizeSlackEvent(event);
+    if (!normalizedEvent) return;
+
     const isDirectMention = this.botUserId != null
-      && event.text?.includes(`<@${this.botUserId}>`);
+      && normalizedEvent.text.includes(`<@${this.botUserId}>`);
     if (eventType !== "app_mention" && !isDirectMention) {
       return;
     }
 
     log.info(
-      `Slack mention from ${event.user} in ${event.channel}: "${event.text.slice(0, 80)}"`,
+      `Slack mention from ${normalizedEvent.user} in ${normalizedEvent.channel}: "${normalizedEvent.text.slice(0, 80)}"`,
     );
 
-    const trigger = transformSlackEvent(event);
+    const trigger = transformSlackEvent(normalizedEvent);
     if (!trigger) return;
 
-    if (event.thread_ts) {
+    if (normalizedEvent.thread_ts) {
       trigger.context = {
         allThreadMessages: await fetchSlackThreadContext(
-          event.channel,
-          event.thread_ts,
+          normalizedEvent.channel,
+          normalizedEvent.thread_ts,
         ),
       };
     }

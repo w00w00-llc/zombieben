@@ -4,10 +4,12 @@ import { SlackNotifierResponder, createSlackNotifierResponder } from "./index.js
 import type { TriageOutcome } from "@/triage/types.js";
 
 const mockPostMessage = vi.fn().mockResolvedValue({});
+const mockUploadV2 = vi.fn().mockResolvedValue({ ok: true, files: [{ id: "F123" }] });
 
 vi.mock("../web-client.js", () => ({
   createSlackWebClient: vi.fn(() => ({
     chat: { postMessage: mockPostMessage },
+    files: { uploadV2: mockUploadV2 },
   })),
 }));
 
@@ -19,7 +21,10 @@ import { getIntegrationKeys } from "@/util/keys.js";
 const mockedGetKeys = vi.mocked(getIntegrationKeys);
 
 describe("SlackNotifierResponder", () => {
-  const client = { chat: { postMessage: mockPostMessage } } as unknown as WebClient;
+  const client = {
+    chat: { postMessage: mockPostMessage },
+    files: { uploadV2: mockUploadV2 },
+  } as unknown as WebClient;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -33,6 +38,23 @@ describe("SlackNotifierResponder", () => {
       channel: "C999",
       text: "hello notification",
     });
+  });
+
+  it("send() uploads all attachments in a single channel message", async () => {
+    const responder = new SlackNotifierResponder(client, "C999");
+    await responder.send("approval needed", {
+      attachments: ["/tmp/plan.md", "/tmp/spec.md"],
+    });
+
+    expect(mockUploadV2).toHaveBeenCalledWith({
+      channel_id: "C999",
+      initial_comment: "approval needed",
+      file_uploads: [
+        { file: "/tmp/plan.md", filename: "plan.md" },
+        { file: "/tmp/spec.md", filename: "spec.md" },
+      ],
+    });
+    expect(mockPostMessage).not.toHaveBeenCalled();
   });
 
   it("sendOutcome() posts mrkdwn block payload", async () => {

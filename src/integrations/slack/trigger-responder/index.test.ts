@@ -9,12 +9,16 @@ function createMockClient() {
       postMessage: vi.fn().mockResolvedValue({ ok: true, ts: "1234.9999" }),
       update: vi.fn().mockResolvedValue({ ok: true }),
     },
+    files: {
+      uploadV2: vi.fn().mockResolvedValue({ ok: true, files: [{ id: "F123" }] }),
+    },
     reactions: {
       add: vi.fn().mockResolvedValue({ ok: true }),
       remove: vi.fn().mockResolvedValue({ ok: true }),
     },
   } as unknown as WebClient & {
     chat: { postMessage: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+    files: { uploadV2: ReturnType<typeof vi.fn> };
     reactions: { add: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> };
   };
 }
@@ -31,6 +35,26 @@ describe("SlackResponder", () => {
       thread_ts: "1234.5678",
       text: "hello world",
     });
+  });
+
+  it("send uploads all attachments as a single threaded message", async () => {
+    const client = createMockClient();
+    const responder = new SlackResponder(client as unknown as WebClient, "C123", "1234.5678");
+
+    await responder.send("please review", {
+      attachments: ["/tmp/plan.md", "/tmp/spec.md"],
+    });
+
+    expect(client.files.uploadV2).toHaveBeenCalledWith({
+      channel_id: "C123",
+      thread_ts: "1234.5678",
+      initial_comment: "please review",
+      file_uploads: [
+        { file: "/tmp/plan.md", filename: "plan.md" },
+        { file: "/tmp/spec.md", filename: "spec.md" },
+      ],
+    });
+    expect(client.chat.postMessage).not.toHaveBeenCalled();
   });
 
   it("sendOutcome posts blocks with mrkdwn", async () => {

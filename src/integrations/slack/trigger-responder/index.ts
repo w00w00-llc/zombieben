@@ -1,7 +1,9 @@
+import path from "node:path";
 import type { WebClient } from "@slack/web-api";
 import type {
   TriggerResponder,
   SentMessage,
+  SendMessageOptions,
 } from "@/responder/responder.js";
 import type { TriageOutcome } from "@/triage/types.js";
 import { formatSlackOutcomeText } from "../outcome-format.js";
@@ -14,7 +16,21 @@ export class SlackResponder implements TriggerResponder {
     private reactTs: string = threadTs,
   ) {}
 
-  async send(message: string): Promise<SentMessage> {
+  async send(message: string, options: SendMessageOptions = {}): Promise<SentMessage> {
+    const attachments = normalizeAttachments(options.attachments);
+    if (attachments.length > 0) {
+      const result = await this.client.files.uploadV2({
+        channel_id: this.channel,
+        thread_ts: this.threadTs,
+        initial_comment: message,
+        file_uploads: attachments.map((file) => ({
+          file,
+          filename: path.basename(file),
+        })),
+      });
+      return { id: extractUploadMessageId(result) };
+    }
+
     const result = await this.client.chat.postMessage({
       channel: this.channel,
       thread_ts: this.threadTs,
@@ -70,4 +86,23 @@ export class SlackResponder implements TriggerResponder {
       if (code !== "no_reaction") throw err;
     }
   }
+}
+
+function normalizeAttachments(attachments: readonly string[] | undefined): string[] {
+  if (!attachments || attachments.length === 0) return [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const attachment of attachments) {
+    const value = attachment.trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    normalized.push(value);
+  }
+  return normalized;
+}
+
+function extractUploadMessageId(result: unknown): string {
+  const files = (result as { files?: Array<{ id?: string }> })?.files;
+  const id = files?.find((file) => typeof file.id === "string")?.id;
+  return id ?? "slack-upload";
 }

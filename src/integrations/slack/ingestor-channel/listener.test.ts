@@ -167,6 +167,47 @@ describe("SlackSocketListener", () => {
     expect(trigger.context).toEqual({ allThreadMessages: threadContext });
   });
 
+  it("ingests message_replied thread replies using the nested message payload", async () => {
+    const registeredHandler = registeredHandlers.get("message");
+    const threadContext = [
+      { user: "U1", ts: "1000.0", text: "earlier message" },
+    ];
+    mockFetchContext.mockResolvedValue(threadContext);
+
+    const ack = vi.fn().mockResolvedValue(undefined);
+    await registeredHandler!({
+      event: {
+        type: "message",
+        subtype: "message_replied",
+        channel: "C123",
+        ts: "1000.0",
+        message: {
+          ts: "1001.0",
+          thread_ts: "1000.0",
+          user: "U456",
+          text: "<@U_BOT> reply in thread",
+        },
+      },
+      ack,
+    });
+
+    await vi.waitFor(() => {
+      expect(mockIngestor.submit).toHaveBeenCalledOnce();
+    });
+
+    expect(mockFetchContext).toHaveBeenCalledWith("C123", "1000.0");
+    const trigger = mockIngestor.submit.mock.calls[0][0];
+    expect(trigger.id).toBe("slack-C123-1001.0");
+    expect(trigger.raw_payload).toEqual({
+      channel: "C123",
+      ts: "1001.0",
+      thread_ts: "1000.0",
+      user: "U456",
+      text: "<@U_BOT> reply in thread",
+    });
+    expect(trigger.context).toEqual({ allThreadMessages: threadContext });
+  });
+
   it("leaves trigger.context undefined for top-level messages", async () => {
     const registeredHandler = registeredHandlers.get("message");
     const ack = vi.fn().mockResolvedValue(undefined);

@@ -12,6 +12,7 @@ The user needs a Slack app with a **Bot Token** (`xoxb-...`). If they don't have
    - `app_mentions:read` — detect when the bot is @mentioned
    - `channels:history` — read messages in public channels
    - `channels:read` — list public channels
+   - `files:write` — upload approval artifacts and other attachments
    - `groups:history` — read messages in private channels
    - `im:history` — read direct messages
    - `chat:write` — send messages
