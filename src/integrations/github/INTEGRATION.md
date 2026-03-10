@@ -49,6 +49,8 @@ Notes:
 - Poll interval defaults to 30 seconds (`ZOMBIEBEN_GITHUB_POLL_INTERVAL_MS` to override).
 - Poller uses `repo-config.yml` `github_url` as source-of-truth for owner/repo.
 - If `github_url` is missing, falls back to slug inference (`owner--repo`).
+- `repo-config.yml` may also include an optional `env:` map. Those values are
+  written into the root `.env` file for newly created worktrees for that repo.
 - Poller ingests:
   - Repo events (`/repos/{owner}/{repo}/events`)
   - Completed Actions runs (`/repos/{owner}/{repo}/actions/runs?status=completed`)

@@ -22,9 +22,14 @@ Slug is derived from the GitHub URL: `github.com/acme/widgets` becomes `acme-wid
 
 ```yaml
 github_url: https://github.com/acme/widgets
+env:
+  API_URL: https://api.example.com
+  SECRET_TOKEN: super-secret
 ```
 
-Only contains the GitHub URL. Credentials live in `keys.json`.
+`env` is optional. When present, ZombieBen writes those key/value pairs into the
+root `.env` file for newly created worktrees for that repo. Credentials for
+integrations still live in `keys.json`.
 
 ## GitHub PAT
 
@@ -47,7 +52,8 @@ The GitHub personal access token is stored in `keys.json` under the `github` int
    ```
 3. Derive slug from URL.
 4. Create `repos/<slug>/`.
-5. Write `repo-config.yml` with `github_url` only.
+5. Write `repo-config.yml` with `github_url`, plus optional `env` values if the
+   user wants worktree-local `.env` overrides.
 6. Clone the repo: `git clone https://<pat>@github.com/<org>/<repo>.git repos/<slug>/main_repo`
 
 ## Listing Repos

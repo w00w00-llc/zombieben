@@ -26,13 +26,17 @@ vi.mock("./tick.js", () => ({
 
 vi.mock("@/ingestor/ingestor.js", () => ({
   Ingestor: class {
-    constructor(_opts: unknown) {}
+    constructor(opts: unknown) {
+      void opts;
+    }
   },
 }));
 
 vi.mock("@/ingestor/dedup-store.js", () => ({
   FileDedupStore: class {
-    constructor(_filePath: string) {}
+    constructor(filePath: string) {
+      void filePath;
+    }
   },
 }));
 
@@ -74,6 +78,22 @@ vi.mock("./reaction-utils.js", () => ({
 }));
 
 describe("ZombieBenRunner", () => {
+  const invokeHandleTrigger = async (
+    runner: object,
+    trigger: Trigger,
+    responders: readonly RoleTaggedResponder[],
+    primary?: RoleTaggedResponder,
+  ): Promise<void> => {
+    const testRunner = runner as {
+      handleTrigger: (
+        trigger: Trigger,
+        responders: readonly RoleTaggedResponder[],
+        primary?: RoleTaggedResponder,
+      ) => Promise<void>;
+    };
+    return testRunner.handleTrigger(trigger, responders, primary);
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     syncAllReposMock.mockResolvedValue(undefined);
@@ -139,7 +159,7 @@ describe("ZombieBenRunner", () => {
     const { ZombieBenRunner } = await import("./index.js");
     const runner = new ZombieBenRunner({} as never);
 
-    await (runner as any).handleTrigger(trigger, [primary], primary);
+    await invokeHandleTrigger(runner, trigger, [primary], primary);
 
     expect(responder.sendOutcome).toHaveBeenCalledWith(outcome);
     expect(responder.sendOutcome.mock.invocationCallOrder[0]).toBeLessThan(

@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import yaml from "js-yaml";
 import type { IngestorChannel } from "@/ingestor/ingestor-channel.js";
 import type { Ingestor } from "@/ingestor/ingestor.js";
 import type { Trigger } from "@/ingestor/trigger.js";
@@ -8,6 +7,7 @@ import type { TriggerResponder } from "@/responder/responder.js";
 import { getIntegrationKeys } from "@/util/keys.js";
 import { ingestorDir, reposDir } from "@/util/paths.js";
 import { log } from "@/util/logger.js";
+import { readRepoConfig } from "@/util/repo-config.js";
 import { GithubNoopResponder } from "../trigger-responder/index.js";
 import type { GithubRepoEvent, GithubWorkflowRun } from "./types.js";
 import { isGithubPollTrigger } from "./types.js";
@@ -354,18 +354,10 @@ function listRepoSlugs(): string[] {
 }
 
 function readOwnerRepo(repoSlug: string): string | null {
-  const configPath = path.join(reposDir(), repoSlug, "repo-config.yml");
-  if (fs.existsSync(configPath)) {
-    try {
-      const raw = yaml.load(fs.readFileSync(configPath, "utf-8")) as Record<string, unknown> | null;
-      const githubUrl = raw?.github_url;
-      if (typeof githubUrl === "string") {
-        const parsed = parseGithubOwnerRepoFromUrl(githubUrl);
-        if (parsed) return parsed;
-      }
-    } catch {
-      // Fall through to slug inference.
-    }
+  const githubUrl = readRepoConfig(repoSlug).github_url;
+  if (githubUrl) {
+    const parsed = parseGithubOwnerRepoFromUrl(githubUrl);
+    if (parsed) return parsed;
   }
 
   const inferred = repoSlugToOwnerRepo(repoSlug);
