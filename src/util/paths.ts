@@ -127,6 +127,10 @@ export function runLogPath(repoSlug: string, worktreeId: string, runId: string):
   return path.join(runDir(repoSlug, worktreeId, runId), "run.log");
 }
 
+export function runRespondersPath(repoSlug: string, worktreeId: string, runId: string): string {
+  return path.join(runDir(repoSlug, worktreeId, runId), "responders.json");
+}
+
 export function integrationsDir(): string {
   return INTEGRATIONS_DIR;
 }

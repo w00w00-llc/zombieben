@@ -1,6 +1,4 @@
 import { Command } from "commander";
-import fs from "node:fs";
-import path from "node:path";
 import { ensureRunnerDir } from "@/util/paths.js";
 
 export function registerUpdateCommand(program: Command): void {

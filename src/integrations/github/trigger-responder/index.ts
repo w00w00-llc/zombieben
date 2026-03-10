@@ -6,18 +6,26 @@ import type { TriageOutcome } from "@/triage/types.js";
  * GitHub notification delivery is not implemented yet.
  */
 export class GithubNoopResponder implements TriggerResponder {
-  async send(_message: string): Promise<SentMessage> {
+  async send(message: string): Promise<SentMessage> {
+    void message;
     return { id: "github-noop" };
   }
 
-  async sendOutcome(_outcome: TriageOutcome): Promise<SentMessage> {
+  async sendOutcome(outcome: TriageOutcome): Promise<SentMessage> {
+    void outcome;
     return { id: "github-noop" };
   }
 
-  async edit(_sent: SentMessage, _message: string): Promise<void> {}
+  async edit(sent: SentMessage, message: string): Promise<void> {
+    void sent;
+    void message;
+  }
 
-  async react(_emoji: string): Promise<void> {}
+  async react(emoji: string): Promise<void> {
+    void emoji;
+  }
 
-  async unreact(_emoji: string): Promise<void> {}
+  async unreact(emoji: string): Promise<void> {
+    void emoji;
+  }
 }
-

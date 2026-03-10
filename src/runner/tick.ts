@@ -91,8 +91,6 @@ async function processRun(run: ActiveRun): Promise<void> {
     zombieben: { repo_slug: repoSlug, trigger: triggerPath },
   };
 
-  const step = workflow.steps[state.step_index];
-
   if (!_agent) {
     throw new Error("CodingAgent not set — call setAgent() before processTick()");
   }

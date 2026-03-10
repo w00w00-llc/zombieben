@@ -48,11 +48,13 @@ export class SlackNotifierResponder implements TriggerResponder {
     });
   }
 
-  async react(_emoji: string): Promise<void> {
+  async react(emoji: string): Promise<void> {
+    void emoji;
     // No-op: notifier posts to a different channel, no message to react to
   }
 
-  async unreact(_emoji: string): Promise<void> {
+  async unreact(emoji: string): Promise<void> {
+    void emoji;
     // No-op
   }
 

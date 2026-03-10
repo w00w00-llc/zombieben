@@ -17,7 +17,7 @@ export function prepareWorkflowForRun(
   const configPath = repoWorktreesConfigPath(repoSlug);
   if (!fs.existsSync(configPath)) return workflow;
 
-  let setupSteps = [] as WorkflowDef["steps"];
+  let setupSteps: WorkflowDef["steps"];
   try {
     const raw = fs.readFileSync(configPath, "utf-8");
     setupSteps = parseWorktreesConfig(raw).setup_steps;

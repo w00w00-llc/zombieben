@@ -90,6 +90,7 @@ export class ClaudeCodingAgent implements CodingAgent {
     } catch (err) {
       throw new Error(
         `Failed to spawn ${this.command}: ${(err as Error).message}`,
+        { cause: err },
       );
     }
 
@@ -161,6 +162,7 @@ export class ClaudeCodingAgent implements CodingAgent {
       stderrStream.end();
       throw new Error(
         `Failed to spawn ${this.command}: ${(err as Error).message}`,
+        { cause: err },
       );
     }
 

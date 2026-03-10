@@ -55,7 +55,7 @@ describe("initRun", () => {
     vi.clearAllMocks();
   });
 
-  it("creates directory structure with runs/{runId}/workflow_state.json, trigger.json, inputs.json, and user_intent.md", async () => {
+  it("creates directory structure with runs/{runId}/workflow_state.json, trigger.json, responders.json, inputs.json, and user_intent.md", async () => {
     const triageResult: RunInitRequest = {
       repoSlug: "my-org--my-repo",
       workflowFile: "fix-bug.yml",
@@ -101,6 +101,14 @@ describe("initRun", () => {
     expect(fs.existsSync(triggerPath)).toBe(true);
     const triggerData = JSON.parse(fs.readFileSync(triggerPath, "utf-8"));
     expect(triggerData).toEqual(trigger);
+
+    // Check responders.json
+    const respondersPath = path.join(runDir, "responders.json");
+    expect(fs.existsSync(respondersPath)).toBe(true);
+    const respondersData = JSON.parse(fs.readFileSync(respondersPath, "utf-8"));
+    expect(respondersData.version).toBe(1);
+    expect(respondersData.triggerId).toBe(trigger.id);
+    expect(Array.isArray(respondersData.entries)).toBe(true);
 
     // Check inputs.json
     const inputsPath = path.join(runDir, "inputs.json");

@@ -1,15 +1,13 @@
 # ZombieBen
 
-ZombieBen is an open-source workflow orchestrator that turns chat requests into structured, auditable execution runs.
-
-It ingests triggers (for example from Slack), triages intent, initializes run state, and executes workflow TODOs through a coding agent in isolated worktrees.
+ZombieBen is a simple tool for getting agents to run predefined workflows. It ingests triggers (e.g. a Slack message or GitHub action run completion), triages it to a predefined workflow, and executes that workflow in an isolated worktree.
 
 ## Why ZombieBen
 
-- **Repeatable automation**: encode operational workflows as YAML.
-- **Auditability**: every run stores state, trigger snapshot, TODO, and logs.
-- **Human-in-the-loop controls**: confirmation requirements and approval gates.
-- **Integration-friendly**: supports integration-aware workflow steps.
+- ✅ Cost control. No runaway token costs. The only thing it needs is for Claude Code or Codex to be installed on the host machine, which you can use subscription-based cost for
+- ✅ Deterministic workflow runs. Workflows are defined in your repo; ZombieBen's engine makes sure every step is completed
+- ✅ Human-in-the-loop controls. You can add approval gates to any workflow, requiring a human to approve running or continuing a workflow
+- ✅ Integration-friendly. Supports integration-aware workflow steps if you need to pull context from Figma, Linear, etc
 
 ## How It Works
 
@@ -34,7 +32,13 @@ It ingests triggers (for example from Slack), triages intent, initializes run st
 - Node.js 18+
 - Git
 
-### Install and build
+### Install from npm
+
+```bash
+npm install -g @w00w00/zombieben
+```
+
+### Build from source
 
 ```bash
 npm install
@@ -48,19 +52,51 @@ zombieben workflows init
 zombieben workflows validate
 ```
 
-### Start runner
-
-```bash
-zombieben runner start
-```
-
 Useful runner commands:
 
 ```bash
+zombieben runner start
 zombieben runner status
 zombieben runner logs
 zombieben runner stop
 ```
+
+## Publishing
+
+### First-time npm setup
+
+```bash
+npm login
+npm whoami
+```
+
+This package is configured for public scoped publishing as `@w00w00/zombieben`.
+
+### Verify the publish artifact locally
+
+```bash
+npm run build
+npm run lint
+npm test
+npm pack --dry-run --cache /tmp/zombieben-npm-cache
+```
+
+To test the exact tarball before publishing:
+
+```bash
+PACKAGE_TGZ="$(npm pack --cache /tmp/zombieben-npm-cache)"
+npm install -g "./$PACKAGE_TGZ"
+zombieben --version
+```
+
+### Publish a release
+
+```bash
+npm version patch
+npm publish
+```
+
+Use `minor` or `major` instead of `patch` when appropriate. The package sets `publishConfig.access=public`, so the default `npm publish` command targets the public npm registry.
 
 ## Documentation
 
@@ -79,6 +115,7 @@ mkdocs serve
 ## Development
 
 ```bash
+npm install
 npm test
 npm run test:watch
 npm run lint

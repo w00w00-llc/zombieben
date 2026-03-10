@@ -23,6 +23,8 @@ import type { RunInitRequest } from "./init-run.js";
 import type { WorkflowRunState } from "@/engine/workflow-run-state.js";
 import { parseWorkflow } from "@/engine/workflow-parser.js";
 import type { InProgressWorkflowAdjustment, TriageOutcome } from "@/triage/types.js";
+import type { RoleTaggedResponder } from "@/responder/types.js";
+import { sendRunMessage, sendRunOutcome } from "./run-notify.js";
 
 interface RunRef {
   repoSlug: string;
@@ -52,7 +54,7 @@ export class ZombieBenRunner {
         const primary = responders.find((r) => r.roles.has("primary"));
         log.info(`Triaging trigger: ${trigger.id}`);
 
-        const task = this.handleTrigger(trigger, primary?.responder);
+        const task = this.handleTrigger(trigger, responders, primary?.responder);
         this.activeTriage.add(task);
         task.finally(() => this.activeTriage.delete(task));
       },
@@ -61,6 +63,7 @@ export class ZombieBenRunner {
 
   private async handleTrigger(
     trigger: Trigger,
+    responders: readonly RoleTaggedResponder[],
     responder?: TriggerResponder,
   ): Promise<void> {
     const LOADING_EMOJI = "eyes";
@@ -113,6 +116,7 @@ export class ZombieBenRunner {
                 worktreeId: retryContext.worktreeId,
               },
               trigger,
+              responders,
             );
             startedRun = {
               repoSlug: retryResult.repoSlug,
@@ -148,6 +152,7 @@ export class ZombieBenRunner {
               worktreeId: result.resolution.worktreeId,
             },
             trigger,
+            responders,
           );
           startedRun = {
             repoSlug: run.repoSlug,
@@ -161,18 +166,25 @@ export class ZombieBenRunner {
         }
       }
 
-      if (responder) {
-        await responder.sendOutcome(outboundOutcome);
-        if (startedRun) {
-          await responder.send(
-            `Started run: \`${startedRun.repoSlug}/${startedRun.worktreeId}/runs/${startedRun.runId}\``,
-          );
-        }
+      if (startedRun) {
+        await sendRunOutcome(startedRun, outboundOutcome, responder);
+        await sendRunMessage(
+          startedRun,
+          `Started run: \`${startedRun.repoSlug}/${startedRun.worktreeId}/runs/${startedRun.runId}\``,
+          responder,
+        );
         if (supersededRun) {
-          await responder.send(
+          await sendRunMessage(
+            startedRun,
             `Superseded run: \`${supersededRun.repoSlug}/${supersededRun.worktreeId}/runs/${supersededRun.runId}\``,
+            responder,
           );
         }
+        if (outcomeError) {
+          await sendRunMessage(startedRun, `Error: ${outcomeError}`, responder);
+        }
+      } else if (responder) {
+        await responder.sendOutcome(outboundOutcome);
         if (outcomeError) {
           await responder.send(`Error: ${outcomeError}`);
         }

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
 import type { Trigger } from "@/ingestor/trigger.js";
+import type { RoleTaggedResponder } from "@/responder/types.js";
 import { initWorkflowRunState } from "@/engine/workflow-runner.js";
 import {
   mainRepoDir,
@@ -19,6 +20,10 @@ import type { TemplateContext } from "@/engine/workflow-template.js";
 import type { WorkflowDef } from "@/engine/workflow-types.js";
 import { createTodoMarkdown } from "@/engine/todo-generator.js";
 import { validateRun } from "./validate-run.js";
+import {
+  serializeRunResponders,
+  writeRunRespondersSnapshot,
+} from "@/responder/run-responders.js";
 
 export interface RunInitRequest {
   repoSlug: string;
@@ -48,6 +53,7 @@ function makeTimestampSlug(name: string): string {
 export async function initRun(
   runInitRequest: RunInitRequest,
   trigger: Trigger,
+  responders: readonly RoleTaggedResponder[] = [],
 ): Promise<InitRunResult> {
   const { repoSlug, workflowFile, inputs } = runInitRequest;
   const { workflow: parsedWorkflow, action } = validateRun(runInitRequest);
@@ -86,6 +92,10 @@ export async function initRun(
   // Write full trigger payload for run history/debugging.
   const triggerPath = path.join(rDir, "trigger.json");
   fs.writeFileSync(triggerPath, JSON.stringify(trigger, null, 2));
+  const responderSnapshotPath = writeRunRespondersSnapshot(
+    rDir,
+    serializeRunResponders(trigger, responders),
+  );
   const inputsPath = path.join(rDir, "inputs.json");
   fs.writeFileSync(inputsPath, JSON.stringify(inputs, null, 2));
   const userIntentPath = path.join(rDir, "user_intent.md");
@@ -125,7 +135,7 @@ export async function initRun(
   fs.writeFileSync(todoPath, createTodoMarkdown(resolvedWorkflow, {}, 0));
 
   log.info(
-    `Initialized run ${repoSlug}/${worktreeId}/runs/${runId} for workflow "${workflow.name}"`,
+    `Initialized run ${repoSlug}/${worktreeId}/runs/${runId} for workflow "${workflow.name}" (responders: ${responderSnapshotPath})`,
   );
 
   return { repoSlug, worktreeId, runId };

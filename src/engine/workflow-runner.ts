@@ -209,8 +209,6 @@ export function advanceWorkflow(
   context?: TemplateContext,
   log?: Logger,
 ): AdvanceResult {
-  const currentStep = workflow.steps[state.step_index];
-
   // Step failed
   if (!stepResult.success) {
     return {
@@ -235,7 +233,8 @@ function getStepName(step: WorkflowStepDef, index: number): string {
   return step.name || `step-${index}`;
 }
 
-function getStepMaxAttempts(_step: WorkflowStepDef): number {
+function getStepMaxAttempts(step: WorkflowStepDef): number {
+  void step;
   return 1;
 }
 

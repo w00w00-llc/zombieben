@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { WebClient } from "@slack/web-api";
 import { SlackNotifierResponder, createSlackNotifierResponder } from "./index.js";
 import type { TriageOutcome } from "@/triage/types.js";
 
@@ -18,7 +19,7 @@ import { getIntegrationKeys } from "@/util/keys.js";
 const mockedGetKeys = vi.mocked(getIntegrationKeys);
 
 describe("SlackNotifierResponder", () => {
-  const client = { chat: { postMessage: mockPostMessage } } as any;
+  const client = { chat: { postMessage: mockPostMessage } } as unknown as WebClient;
 
   beforeEach(() => {
     vi.clearAllMocks();
