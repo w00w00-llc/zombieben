@@ -20,7 +20,7 @@ vi.mock("./context.js", () => ({
   fetchSlackThreadContext: vi.fn().mockResolvedValue([]),
 }));
 
-let registeredHandler: ((args: { event: unknown; ack: () => Promise<void> }) => Promise<void>) | null = null;
+const registeredHandlers = new Map<string, (args: { event: unknown; ack: () => Promise<void> }) => Promise<void>>();
 const mockSocketStart = vi.fn().mockResolvedValue(undefined);
 const mockSocketDisconnect = vi.fn().mockResolvedValue(undefined);
 
@@ -30,8 +30,8 @@ vi.mock("@slack/socket-mode", () => ({
     start = mockSocketStart;
     disconnect = mockSocketDisconnect;
     on(event: string, handler: (args: { event: unknown; ack: () => Promise<void> }) => Promise<void>) {
-      if (event === "message") {
-        registeredHandler = handler;
+      if (event === "message" || event === "app_mention") {
+        registeredHandlers.set(event, handler);
       }
     }
   },
@@ -57,7 +57,7 @@ describe("SlackSocketListener", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    registeredHandler = null;
+    registeredHandlers.clear();
     mockIngestor = createMockIngestor();
     listener = new SlackSocketListener("xapp-test-token", mockIngestor);
     await listener.start();
@@ -73,7 +73,8 @@ describe("SlackSocketListener", () => {
   });
 
   it("calls ingestor.submit() when message mentions the bot", async () => {
-    expect(registeredHandler).not.toBeNull();
+    const registeredHandler = registeredHandlers.get("message");
+    expect(registeredHandler).toBeDefined();
 
     const ack = vi.fn().mockResolvedValue(undefined);
     await registeredHandler!({
@@ -99,6 +100,7 @@ describe("SlackSocketListener", () => {
   });
 
   it("ignores messages that don't mention the bot", async () => {
+    const registeredHandler = registeredHandlers.get("message");
     const ack = vi.fn().mockResolvedValue(undefined);
     await registeredHandler!({
       event: {
@@ -117,6 +119,7 @@ describe("SlackSocketListener", () => {
   });
 
   it("filters bot messages via transform (returns null)", async () => {
+    const registeredHandler = registeredHandlers.get("message");
     const ack = vi.fn().mockResolvedValue(undefined);
     await registeredHandler!({
       event: {
@@ -136,6 +139,7 @@ describe("SlackSocketListener", () => {
   });
 
   it("populates trigger.context for threaded messages", async () => {
+    const registeredHandler = registeredHandlers.get("message");
     const threadContext = [
       { user: "U1", ts: "1000.0", text: "earlier message" },
     ];
@@ -164,6 +168,7 @@ describe("SlackSocketListener", () => {
   });
 
   it("leaves trigger.context undefined for top-level messages", async () => {
+    const registeredHandler = registeredHandlers.get("message");
     const ack = vi.fn().mockResolvedValue(undefined);
     await registeredHandler!({
       event: {
@@ -183,5 +188,32 @@ describe("SlackSocketListener", () => {
     expect(mockFetchContext).not.toHaveBeenCalled();
     const trigger = mockIngestor.submit.mock.calls[0][0];
     expect(trigger.context).toBeUndefined();
+  });
+
+  it("calls ingestor.submit() for app_mention events", async () => {
+    const registeredHandler = registeredHandlers.get("app_mention");
+    expect(registeredHandler).toBeDefined();
+
+    const ack = vi.fn().mockResolvedValue(undefined);
+    await registeredHandler!({
+      event: {
+        type: "app_mention",
+        channel: "C123",
+        ts: "1234.5678",
+        user: "U456",
+        text: "hello bot",
+      },
+      ack,
+    });
+
+    expect(ack).toHaveBeenCalledOnce();
+
+    await vi.waitFor(() => {
+      expect(mockIngestor.submit).toHaveBeenCalledOnce();
+    });
+
+    const trigger = mockIngestor.submit.mock.calls[0][0];
+    expect(trigger.source).toBe("slack_webhook");
+    expect(trigger.id).toBe("slack-C123-1234.5678");
   });
 });

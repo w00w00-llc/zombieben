@@ -77,3 +77,54 @@ describe("rebaseWorktreeOntoDefaultBranch", () => {
     );
   });
 });
+
+describe("syncRepo", () => {
+  beforeEach(() => {
+    process.env.ZOMBIEBEN_RUNNER_DIR = TEST_DIR;
+    fs.mkdirSync(
+      path.join(TEST_DIR, "repos", "org--repo", "main_repo"),
+      { recursive: true },
+    );
+    execFileMock.mockReset();
+  });
+
+  afterEach(() => {
+    delete process.env.ZOMBIEBEN_RUNNER_DIR;
+    fs.rmSync(TEST_DIR, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("retries fetch on ref lock race and then resets to origin/main", async () => {
+    let fetchCalls = 0;
+    execFileMock.mockImplementation((...all: unknown[]) => {
+      const args = all[1] as string[];
+      const cb = all[all.length - 1] as (
+        err: Error | null,
+        stdout?: string,
+        stderr?: string,
+      ) => void;
+
+      if (args[0] === "fetch") {
+        fetchCalls += 1;
+        if (fetchCalls === 1) {
+          return cb(
+            new Error(
+              "error: cannot lock ref 'refs/remotes/origin/main': is at abc but expected def",
+            ),
+            "",
+            "",
+          );
+        }
+        return cb(null, "", "");
+      }
+      if (args[0] === "reset") {
+        return cb(null, "", "");
+      }
+      return cb(null, "", "");
+    });
+
+    const { syncRepo } = await import("./repo-sync.js");
+    await expect(syncRepo("org--repo")).resolves.toBeUndefined();
+    expect(fetchCalls).toBe(2);
+  });
+});

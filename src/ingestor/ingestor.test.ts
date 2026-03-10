@@ -55,6 +55,31 @@ describe("Ingestor", () => {
     expect(onTrigger).toHaveBeenCalledOnce();
   });
 
+  it("deduplicates equivalent Slack events that share the same message ts", async () => {
+    ingestor.submit({
+      ...makeTrigger(),
+      raw_payload: {
+        channel: "C123",
+        ts: "1234.5678",
+        user: "U456",
+        text: "<@U_BOT> hello",
+        type: "message",
+      },
+    });
+    ingestor.submit({
+      ...makeTrigger(),
+      raw_payload: {
+        channel: "C123",
+        ts: "1234.5678",
+        user: "U456",
+        text: "hello",
+        type: "app_mention",
+      },
+    });
+
+    expect(onTrigger).toHaveBeenCalledOnce();
+  });
+
   it("adds trigger ID to dedup store", async () => {
     ingestor.submit(makeTrigger());
     expect(dedupStore.has("slack-C123-1234.5678")).toBe(true);

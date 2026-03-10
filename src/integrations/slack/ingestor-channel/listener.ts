@@ -16,6 +16,11 @@ interface MessageEvent {
   subtype?: string;
 }
 
+interface SocketModeEventArgs {
+  event: unknown;
+  ack: () => Promise<void>;
+}
+
 export class SlackSocketListener {
   private socketClient: SocketModeClient;
   private ingestor: Ingestor;
@@ -31,10 +36,12 @@ export class SlackSocketListener {
     });
     this.ingestor = ingestor;
 
-    this.socketClient.on("message", async ({ event, ack }) => {
+    const registerSlackEvent = (eventName: "message" | "app_mention") => this.socketClient.on(eventName, async ({ event, ack }: SocketModeEventArgs) => {
       await ack();
-      this.handleMessage(event as MessageEvent);
+      this.handleMessage(event as MessageEvent, eventName);
     });
+    registerSlackEvent("message");
+    registerSlackEvent("app_mention");
     this.socketClient.on("connected", () => {
       log.info("Slack Socket Mode connected.");
     });
@@ -72,8 +79,13 @@ export class SlackSocketListener {
     log.info("Slack Socket Mode listener stopped.");
   }
 
-  private async handleMessage(event: MessageEvent): Promise<void> {
-    if (!this.botUserId || !event.text?.includes(`<@${this.botUserId}>`)) {
+  private async handleMessage(
+    event: MessageEvent,
+    eventType: "message" | "app_mention",
+  ): Promise<void> {
+    const isDirectMention = this.botUserId != null
+      && event.text?.includes(`<@${this.botUserId}>`);
+    if (eventType !== "app_mention" && !isDirectMention) {
       return;
     }
 

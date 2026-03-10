@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { zombiebenDir, ensureRunnerDir, integrationsDir } from "@/util/paths.js";
-import { ClaudeCodingAgent } from "@/codingagents/index.js";
+import { createCodingAgent, resolveDefaultCodingAgent } from "@/codingagents/index.js";
 
 const SYSTEM_PROMPT = `You are the ZombieBen runner chat interface. You help users manage their ZombieBen configuration: adding repos, setting up integrations, debugging tasks, and checking status.
 
@@ -15,11 +15,12 @@ const INITIAL_PROMPT = `Warn stupid human:\n\nYou've entered ZombieBen's brain (
 export function registerChatCommand(parent: Command): void {
   parent
     .command("chat")
-    .description("Open Claude Code in the ~/.zombieben directory")
+    .description("Open the configured coding agent in the ~/.zombieben directory")
     .action(async () => {
       ensureRunnerDir();
 
-      const agent = new ClaudeCodingAgent();
+      const selectedAgent = resolveDefaultCodingAgent();
+      const agent = createCodingAgent(selectedAgent);
       const handle = agent.spawn({
         prompt: INITIAL_PROMPT,
         systemPrompt: SYSTEM_PROMPT,
@@ -31,7 +32,7 @@ export function registerChatCommand(parent: Command): void {
       try {
         await handle.done;
       } catch (err) {
-        console.error(`Failed to start claude: ${(err as Error).message}`);
+        console.error(`Failed to start ${selectedAgent}: ${(err as Error).message}`);
         process.exit(1);
       }
     });

@@ -10,7 +10,7 @@ import {
 } from "@/util/paths.js";
 import { log } from "@/util/logger.js";
 import { ZombieBenRunner } from "@/runner/index.js";
-import { ClaudeCodingAgent } from "@/codingagents/index.js";
+import { createCodingAgent, resolveDefaultCodingAgent } from "@/codingagents/index.js";
 
 const PID_FILE = path.join(zombiebenDir(), "runner.pid");
 
@@ -69,7 +69,9 @@ function startDaemon(): void {
 async function startForeground(): Promise<void> {
   log.tee = true;
 
-  const runner = new ZombieBenRunner(new ClaudeCodingAgent());
+  const selectedAgent = resolveDefaultCodingAgent();
+  log.info(`Using default coding agent: ${selectedAgent}`);
+  const runner = new ZombieBenRunner(createCodingAgent(selectedAgent));
 
   fs.writeFileSync(PID_FILE, String(process.pid));
 

@@ -8,6 +8,7 @@ import { log } from "@/util/logger.js";
 import type { CodingAgent } from "@/codingagents/index.js";
 
 const execFileAsync = promisify(execFile);
+const repoGitLocks = new Map<string, Promise<void>>();
 
 function getDefaultBranch(repoSlug: string): string {
   const configPath = path.join(
@@ -30,14 +31,16 @@ function getDefaultBranch(repoSlug: string): string {
 }
 
 export async function syncRepo(repoSlug: string): Promise<void> {
-  const dir = mainRepoDir(repoSlug);
-  if (!fs.existsSync(dir)) return;
+  await withRepoGitLock(repoSlug, async () => {
+    const dir = mainRepoDir(repoSlug);
+    if (!fs.existsSync(dir)) return;
 
-  const branch = getDefaultBranch(repoSlug);
-  const opts = { cwd: dir };
+    const branch = getDefaultBranch(repoSlug);
+    const opts = { cwd: dir };
 
-  await execFileAsync("git", ["fetch", "origin", branch, "--quiet"], opts);
-  await execFileAsync("git", ["reset", "--hard", `origin/${branch}`], opts);
+    await fetchDefaultBranchWithRetry(dir, branch);
+    await execFileAsync("git", ["reset", "--hard", `origin/${branch}`], opts);
+  });
 }
 
 export async function rebaseWorktreeOntoDefaultBranch(
@@ -45,34 +48,36 @@ export async function rebaseWorktreeOntoDefaultBranch(
   worktreeId: string,
   agent?: CodingAgent,
 ): Promise<void> {
-  const dir = worktreeRepoDir(repoSlug, worktreeId);
-  if (!fs.existsSync(dir)) return;
+  await withRepoGitLock(repoSlug, async () => {
+    const dir = worktreeRepoDir(repoSlug, worktreeId);
+    if (!fs.existsSync(dir)) return;
 
-  const branch = getDefaultBranch(repoSlug);
-  const opts = { cwd: dir };
+    const branch = getDefaultBranch(repoSlug);
+    const opts = { cwd: dir };
 
-  if (agent) {
-    await execFileAsync("git", ["fetch", "origin", branch, "--quiet"], opts);
-    await runFullRebaseWithAgent(agent, dir, branch, repoSlug, worktreeId);
-    if (await isRebaseInProgress(dir)) {
+    if (agent) {
+      await fetchDefaultBranchWithRetry(dir, branch);
+      await runFullRebaseWithAgent(agent, dir, branch, repoSlug, worktreeId);
+      if (await isRebaseInProgress(dir)) {
+        throw new Error(
+          `Rebase still in progress after agent-managed rebase for ${repoSlug}/${worktreeId}`,
+        );
+      }
+      return;
+    }
+
+    await fetchDefaultBranchWithRetry(dir, branch);
+    try {
+      await execFileAsync("git", ["rebase", `origin/${branch}`], opts);
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       throw new Error(
-        `Rebase still in progress after agent-managed rebase for ${repoSlug}/${worktreeId}`,
+        `git rebase origin/${branch} failed: ${message}`,
+        { cause: err },
       );
     }
-    return;
-  }
-
-  await execFileAsync("git", ["fetch", "origin", branch, "--quiet"], opts);
-  try {
-    await execFileAsync("git", ["rebase", `origin/${branch}`], opts);
-    return;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      `git rebase origin/${branch} failed: ${message}`,
-      { cause: err },
-    );
-  }
+  });
 }
 
 async function runFullRebaseWithAgent(
@@ -148,4 +153,58 @@ async function isRebaseInProgress(cwd: string): Promise<boolean> {
 async function gitPathExists(cwd: string, gitPath: string): Promise<boolean> {
   const { stdout } = await execFileAsync("git", ["rev-parse", "--git-path", gitPath], { cwd });
   return fs.existsSync(stdout.trim());
+}
+
+async function withRepoGitLock<T>(
+  repoSlug: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const prev = repoGitLocks.get(repoSlug) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  repoGitLocks.set(repoSlug, current);
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (repoGitLocks.get(repoSlug) === current) {
+      repoGitLocks.delete(repoSlug);
+    }
+  }
+}
+
+async function fetchDefaultBranchWithRetry(
+  cwd: string,
+  branch: string,
+): Promise<void> {
+  const opts = { cwd };
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await execFileAsync("git", ["fetch", "origin", branch, "--quiet"], opts);
+      return;
+    } catch (err) {
+      if (
+        attempt < maxAttempts
+        && isGitRefLockRaceError(err)
+      ) {
+        await sleep(attempt * 200);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+function isGitRefLockRaceError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes("cannot lock ref 'refs/remotes/origin/")
+    && message.includes("but expected");
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }

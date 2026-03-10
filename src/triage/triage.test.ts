@@ -111,7 +111,7 @@ describe("triageTrigger", () => {
     expect(result).toEqual(expected);
   });
 
-  it("returns fallback when claude invocation fails", async () => {
+  it("returns fallback when coding agent invocation fails", async () => {
     const agent = mockFailure("Command not found");
 
     const result = await triageTrigger(makeTrigger(), { agent });
@@ -132,15 +132,63 @@ describe("triageTrigger", () => {
 
     const result = await triageTrigger(makeTrigger(), { agent });
     expect(result.kind).toBe("immediate_response");
-    expect((result as { reasoning: string }).reasoning).toContain("Could not find result in claude stream");
+    expect((result as { reasoning: string }).reasoning).toContain("Could not find result in coding agent stream");
   });
 
-  it("returns fallback when claude reports an error", async () => {
+  it("returns fallback when coding agent reports an error", async () => {
     const agent = mockSuccess(JSON.stringify({ type: "result", result: "Something went wrong", is_error: true }));
 
     const result = await triageTrigger(makeTrigger(), { agent });
     expect(result.kind).toBe("immediate_response");
-    expect((result as { reasoning: string }).reasoning).toContain("Claude returned error");
+    expect((result as { reasoning: string }).reasoning).toContain("Coding agent returned error");
+  });
+
+  it("supports stream lines without a type=result envelope", async () => {
+    const expected: TriageOutcome = {
+      kind: "immediate_response",
+      message: "ok",
+      reasoning: "parsed from output_text",
+    };
+    const stdout = [
+      JSON.stringify({ type: "progress", message: "thinking" }),
+      JSON.stringify({ type: "final", output_text: JSON.stringify(expected) }),
+    ].join("\n");
+    const agent = mockSuccess(stdout);
+
+    const result = await triageTrigger(makeTrigger(), { agent });
+    expect(result).toEqual(expected);
+  });
+
+  it("parses codex-style nested event content after thread.started", async () => {
+    const expected: TriageOutcome = {
+      kind: "immediate_response",
+      message: "codex parsed",
+      reasoning: "nested output_text",
+    };
+    const stdout = [
+      JSON.stringify({ type: "thread.started", thread_id: "abc123" }),
+      JSON.stringify({
+        type: "response.completed",
+        response: {
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [
+                {
+                  type: "output_text",
+                  text: JSON.stringify(expected),
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    ].join("\n");
+    const agent = mockSuccess(stdout);
+
+    const result = await triageTrigger(makeTrigger(), { agent });
+    expect(result).toEqual(expected);
   });
 
   it("treats plain text response as immediate_response", async () => {

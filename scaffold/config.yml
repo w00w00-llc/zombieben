@@ -1,3 +1,2 @@
 max_parallel_workflows: 3
 default_branch: main
-coding_agent: claude
