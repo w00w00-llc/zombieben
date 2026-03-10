@@ -4,123 +4,81 @@ ZombieBen is a simple tool for getting agents to run predefined workflows. It in
 
 ## Why ZombieBen
 
-- ✅ Cost control. No runaway token costs. The only thing it needs is for Claude Code or Codex to be installed on the host machine, which you can use subscription-based cost for
-- ✅ Deterministic workflow runs. Workflows are defined in your repo; ZombieBen's engine makes sure every step is completed
-- ✅ Human-in-the-loop controls. You can add approval gates to any workflow, requiring a human to approve running or continuing a workflow
-- ✅ Integration-friendly. Supports integration-aware workflow steps if you need to pull context from Figma, Linear, etc
+- ✅ **Cost control**. No runaway token costs. The only thing it needs is for Claude Code or Codex to be installed on the host machine, which you can use subscription-based cost for
+- ✅ **Deterministic agent behavior**. Workflows are defined in your repo; ZombieBen's engine makes sure every step is completed
+- ✅ **Human-in-the-loop** controls. You can add approval gates to any workflow, requiring a human to approve running or continuing a workflow
+- ✅ **Context-aware workflows**. Supports integration-aware workflow steps if you need to pull context from Figma, Linear, etc
 
 ## How It Works
 
-1. Ingest a trigger from an enabled channel.
-2. Triage into a structured outcome (`new_workflow`, `adjustment`, or immediate response).
-3. Initialize run metadata and artifacts.
-4. Execute workflow slices while persisting run state.
-5. Emit notifications/responses and keep full execution logs.
+ZombieBen works a lot like GitHub Actions:
 
-## Repository Layout
-
-- `src/runner/*` — run orchestration (`initRun`, polling ticks, lifecycle)
-- `src/engine/*` — workflow parser, TODO generation, execution/state machine
-- `src/triage/*` — triage prompts/types/apply/present logic
-- `src/integrations/*` — channel and service integrations
-- `docs/*` — project documentation (published via GitHub Pages workflow)
+1. You set up a long-running ZombieBen runner with the integrations it needs, such as Slack, GitHub, Linear, or Figma.
+2. In each repo, you define `.zombieben/` workflows and worktree behavior.
+3. ZombieBen ingests a trigger from an enabled channel.
+4. It triages the request into a structured outcome (`new_workflow`, `adjustment`, or immediate response).
+5. It initializes run metadata and artifacts, then executes the matching workflow in an isolated worktree.
+6. It emits notifications/responses and keeps full execution logs for the run.
 
 ## Quickstart
 
-### Prerequisites
+### Runner
+
+Prerequisites:
 
 - Node.js 18+
 - Git
+- Claude Code installed and set up on the runner machine
 
-### Install from npm
+Install from npm:
 
 ```bash
 npm install -g @w00w00/zombieben
 ```
 
-### Build from source
+Runner setup and operation:
 
-```bash
-npm install
-npm run build
-```
+- `zombieben runner chat` is how you get integrations and runner config set up. Just talk to it: it opens Claude Code in `~/.zombieben` and knows how to get ZombieBen configured for you.
+- `zombieben runner start` starts the ZombieBen runner.
 
-### Initialize workflow scaffolding (inside a target repo)
+### Repo
+
+Inside a target git repo, scaffold `.zombieben/`:
 
 ```bash
 zombieben workflows init
-zombieben workflows validate
 ```
 
-Useful runner commands:
+Repo layout:
 
-```bash
-zombieben runner start
-zombieben runner status
-zombieben runner logs
-zombieben runner stop
-```
+- `.zombieben/worktrees.yml` defines how ZombieBen should create and prepare worktrees for runs.
+- `.zombieben/workflows/` is where your workflow `.yml` files live.
+- `.zombieben/rules.md` can be added to capture repo-specific guidance for agents.
 
-## Publishing
+## Command Reference
 
-### First-time npm setup
+Top-level commands:
 
-```bash
-npm login
-npm whoami
-```
+- `zombieben --help` or `zombieben help [command]` — show CLI help
+- `zombieben --version` — print the installed CLI version
+- `zombieben runner` — runner daemon and management commands
+- `zombieben workflows` — workflow scaffolding and validation commands
+- `zombieben update` — sync install-provided files without clobbering user data
 
-This package is configured for public scoped publishing as `@w00w00/zombieben`.
+Runner commands:
 
-### Verify the publish artifact locally
+- `zombieben runner chat` — open Claude Code in `~/.zombieben`
+- `zombieben runner logs` — tail the runner daemon log
+- `zombieben runner start` — start the runner in the foreground
+- `zombieben runner start --daemon` — start the runner in the background
+- `zombieben runner status` — show all workflow run statuses
+- `zombieben runner stop` — stop the runner daemon
 
-```bash
-npm run build
-npm run lint
-npm test
-npm pack --dry-run --cache /tmp/zombieben-npm-cache
-```
+Workflow commands:
 
-To test the exact tarball before publishing:
-
-```bash
-PACKAGE_TGZ="$(npm pack --cache /tmp/zombieben-npm-cache)"
-npm install -g "./$PACKAGE_TGZ"
-zombieben --version
-```
-
-### Publish a release
-
-```bash
-npm version patch
-npm publish
-```
-
-Use `minor` or `major` instead of `patch` when appropriate. The package sets `publishConfig.access=public`, so the default `npm publish` command targets the public npm registry.
-
-## Documentation
-
-Docs source is in `docs/` with MkDocs config in `mkdocs.yml`.
-
-- GitHub Pages deploy workflow: `.github/workflows/docs-pages.yml`
-- PR docs checks: `.github/workflows/docs-check.yml`
-
-To preview docs locally:
-
-```bash
-python3 -m pip install mkdocs
-mkdocs serve
-```
-
-## Development
-
-```bash
-npm install
-npm test
-npm run test:watch
-npm run lint
-npm run build
-```
+- `zombieben workflows init` — scaffold `.zombieben/` in the current git repo
+- `zombieben workflows validate` — validate `.zombieben/workflows/*.yml` and `worktrees.yml`
+- `zombieben workflows validate --dir /path/to/repo` — validate a repo without running from its root
 
 ## Contributing
 
