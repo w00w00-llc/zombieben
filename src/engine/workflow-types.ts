@@ -30,9 +30,9 @@ export interface WorkflowInput {
 }
 
 // --- Steps ---
-// Discriminated union: prompt steps, for-loop steps, and script steps
+// Discriminated union: prompt steps, foreach steps, and script steps
 
-export type WorkflowStepDef = PromptStepDef | ForLoopStepDef | ScriptStepDef;
+export type WorkflowStepDef = PromptStepDef | ForeachStepDef | ScriptStepDef;
 
 /** A step that runs a prompt via claude -p */
 export interface PromptStepDef {
@@ -46,10 +46,11 @@ export interface PromptStepDef {
 }
 
 /** A step that iterates over a collection */
-export interface ForLoopStepDef {
-  kind: "for";
+export interface ForeachStepDef {
+  kind: "foreach";
   name: string;
-  for: string;
+  foreach: string;
+  parameter: string;
   steps: WorkflowStepDef[];
   if?: "success" | "failure" | "always";
 }

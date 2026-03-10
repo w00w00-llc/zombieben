@@ -5,7 +5,7 @@ import type {
   WorkflowDef,
   WorkflowStepDef,
   PromptStepDef,
-  ForLoopStepDef,
+  ForeachStepDef,
   ScriptStepDef,
   WorktreeConfig,
   WorkflowInput,
@@ -81,20 +81,23 @@ function parseStep(raw: Record<string, unknown>): WorkflowStepDef {
     } satisfies ScriptStepDef;
   }
 
-  // For-loop step: has `for` field
-  if (raw.for != null) {
+  // Foreach step: has `foreach` field
+  if (raw.foreach != null) {
     if (raw.prompt != null) {
       throw new Error(
-        `Step "${raw.name ?? ""}" has both "for" and "prompt". Use "for" with "steps" instead.`,
+        `Step "${raw.name ?? ""}" has both "foreach" and "prompt". Use "foreach" with "steps" instead.`,
       );
     }
+    const foreachExpr = String(raw.foreach);
+    const parameter = parseForeachParameter(foreachExpr, raw.name);
     return {
-      kind: "for",
+      kind: "foreach",
       name: (raw.name as string) ?? "",
-      for: raw.for as string,
+      foreach: foreachExpr,
+      parameter,
       steps: parseSteps(raw.steps as unknown[]),
-      ...(raw.if != null ? { if: raw.if as ForLoopStepDef["if"] } : {}),
-    } satisfies ForLoopStepDef;
+      ...(raw.if != null ? { if: raw.if as ForeachStepDef["if"] } : {}),
+    } satisfies ForeachStepDef;
   }
 
   // Prompt step (default)
@@ -123,6 +126,19 @@ function parseStep(raw: Record<string, unknown>): WorkflowStepDef {
   }
 
   return step;
+}
+
+function parseForeachParameter(
+  expr: string,
+  stepName: unknown,
+): string {
+  const match = expr.trim().match(/^([^\s]+)/);
+  if (!match || !match[1]) {
+    throw new Error(
+      `Step "${String(stepName ?? "")}" has invalid "foreach" expression. Expected "<parameter> ...".`,
+    );
+  }
+  return match[1].toLowerCase();
 }
 
 function parseBranch(rawBranches: Record<string, unknown>[]): BranchDef {
@@ -247,15 +263,18 @@ function validateStep(step: WorkflowStepDef, path: string): ValidationError[] {
       }
       break;
     }
-    case "for": {
+    case "foreach": {
       if (!step.name) {
-        errors.push({ path, message: "For-loop step must have a name" });
+        errors.push({ path, message: "Foreach step must have a name" });
       }
-      if (!step.for) {
-        errors.push({ path, message: "For-loop step must have a for expression" });
+      if (!step.foreach) {
+        errors.push({ path, message: "Foreach step must have a foreach expression" });
+      }
+      if (!step.parameter) {
+        errors.push({ path, message: "Foreach step must define a parameter" });
       }
       if (!step.steps || step.steps.length === 0) {
-        errors.push({ path, message: "For-loop step must have nested steps" });
+        errors.push({ path, message: "Foreach step must have nested steps" });
       } else {
         for (let i = 0; i < step.steps.length; i++) {
           errors.push(...validateStep(step.steps[i], `${path}.steps[${i}]`));
@@ -398,7 +417,7 @@ function validateTemplateExpressions(workflow: WorkflowDef, opts?: ValidateWorkf
           checkStep(step.branch.else.steps[j], `${stepPath}.branch.else.steps[${j}]`);
         }
       }
-    } else if (step.kind === "for") {
+    } else if (step.kind === "foreach") {
       for (let j = 0; j < step.steps.length; j++) {
         checkStep(step.steps[j], `${stepPath}.steps[${j}]`);
       }

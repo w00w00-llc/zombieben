@@ -1,0 +1,2 @@
+- [ ] Create a file ./foreach. Write 5 lines into it, each line with a new, randomly-generated word
+- [ ] For each line in ./foreach.txt, add a TODO below this item with the contents: "Append {line} to ./foreach.txt"

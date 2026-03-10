@@ -1,0 +1,1 @@
+- [ ] Generate a random number between 0 and 1 using bash. Write it to ./whileloop-coin.txt

@@ -62,4 +62,34 @@ describe("createTodoMarkdown", () => {
     expect(todo).toContain("- [ ] Implement changes");
     expect(todo.indexOf("AWAITING APPROVAL:")).toBeLessThan(todo.indexOf("- [ ] Implement changes"));
   });
+
+  it("renders foreach steps with parsed parameter in TODO form", () => {
+    const workflow: WorkflowDef = {
+      name: "Foreach",
+      steps: [
+        {
+          kind: "prompt",
+          name: "Write file",
+          prompt: "Create a file ./foreach. Write 5 lines into it, each line with a new, randomly-generated word",
+        },
+        {
+          kind: "foreach",
+          name: "New words",
+          foreach: "line in ./foreach.txt",
+          parameter: "line",
+          steps: [
+            {
+              kind: "prompt",
+              name: "Append line",
+              prompt: "Append {line} to ./foreach.txt",
+            },
+          ],
+        },
+      ],
+    };
+
+    const todo = createTodoMarkdown(workflow, context, 0);
+    expect(todo).toContain("- [ ] Create a file ./foreach. Write 5 lines into it, each line with a new, randomly-generated word");
+    expect(todo).toContain('- [ ] For each line in ./foreach.txt, add a TODO below this item with the contents: "Append {line} to ./foreach.txt"');
+  });
 });

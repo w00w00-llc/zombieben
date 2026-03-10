@@ -43,4 +43,25 @@ describe("parseWorkflow", () => {
     expect(workflow.name).toBe("Legacy Trigger Workflow");
     expect(workflow.steps).toHaveLength(1);
   });
+
+  it("parses foreach step and extracts parameter from first token", () => {
+    const workflow = parseWorkflow(
+      [
+        "name: Foreach Workflow",
+        "steps:",
+        "  - name: Iterate Lines",
+        "    foreach: line in ./foreach.txt",
+        "    steps:",
+        "      - name: append",
+        "        prompt: Append {line} to ./foreach.txt",
+      ].join("\n"),
+    );
+
+    expect(workflow.steps).toHaveLength(1);
+    expect(workflow.steps[0]).toMatchObject({
+      kind: "foreach",
+      foreach: "line in ./foreach.txt",
+      parameter: "line",
+    });
+  });
 });

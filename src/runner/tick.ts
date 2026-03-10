@@ -141,7 +141,7 @@ function collectArtifactNamesFromStep(step: WorkflowDef["steps"][number], names:
       for (const s of step.branch.if.steps) collectArtifactNamesFromStep(s, names);
       for (const s of step.branch.else.steps) collectArtifactNamesFromStep(s, names);
     }
-  } else if (step.kind === "for") {
+  } else if (step.kind === "foreach") {
     for (const s of step.steps) collectArtifactNamesFromStep(s, names);
   }
 }

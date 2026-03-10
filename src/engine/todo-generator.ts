@@ -2,7 +2,7 @@ import type {
   WorkflowDef,
   WorkflowStepDef,
   PromptStepDef,
-  ForLoopStepDef,
+  ForeachStepDef,
 } from "./workflow-types.js";
 import type { TemplateContext } from "./workflow-template.js";
 import { resolveTemplate } from "./workflow-template.js";
@@ -107,8 +107,8 @@ function renderStep(
       renderPromptStep(step, context, lines, depth);
       break;
 
-    case "for":
-      renderForStep(step, context, lines, depth);
+    case "foreach":
+      renderForeachStep(step, context, lines, depth);
       break;
   }
 }
@@ -165,21 +165,30 @@ function renderPromptStep(
   }
 }
 
-function renderForStep(
-  step: ForLoopStepDef,
+function renderForeachStep(
+  step: ForeachStepDef,
   context: TemplateContext,
   lines: string[],
   depth: number,
 ): void {
   const indent = "  ".repeat(depth);
   const checkbox = `${indent}- [ ] `;
+  const iterExpr = resolveTemplate(step.foreach, context).trim();
+  const remainder = iterExpr.split(/\s+/).slice(1).join(" ").trim();
+  const iterationSource = remainder ? ` ${remainder}` : "";
+  const itemTemplate = summarizeForeachItemTemplate(step, context);
 
-  const iterExpr = resolveTemplate(step.for, context).trim();
   lines.push(
-    `${checkbox}Add TODO items below this for each: ${iterExpr}. Each iteration should contain the following sub-steps:`,
+    `${checkbox}For each ${step.parameter}${iterationSource}, add a TODO below this item with the contents: "${itemTemplate}"`,
   );
+}
 
-  for (const sub of step.steps) {
-    renderStep(sub, context, lines, depth + 1);
+function summarizeForeachItemTemplate(
+  step: ForeachStepDef,
+  context: TemplateContext,
+): string {
+  if (step.steps.length === 1 && step.steps[0].kind === "prompt") {
+    return resolveTemplate(step.steps[0].prompt, context).trim().replace(/\s+/g, " ");
   }
+  return `Execute sub-steps for {${step.parameter}}`;
 }

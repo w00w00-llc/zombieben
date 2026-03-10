@@ -31,7 +31,7 @@ steps:
               in a table with two columns: "Test Name" and "Status". "Status" should
               be set to "Pending" for each test
           - name: Label Flaky Tests
-            for: Each test in ./failing-e2e-tests/failed-tests.txt
+            foreach: test in ./failing-e2e-tests/failed-tests.txt
             steps:
               - name: Label the test
                 prompt: >
@@ -39,7 +39,7 @@ steps:
                   greater than 0.5, update the status of the test to "Flaky". Otherwise,
                   update the status to "Failing".
           - name: Fix Failing Tests
-            for: Each test with the status "Failing" in ./failing-e2e-tests/failed-tests.txt
+            foreach: test with the status "Failing" in ./failing-e2e-tests/failed-tests.txt
             steps:
               - name: Fix test
                 prompt: >
@@ -48,6 +48,5 @@ steps:
         steps:
           - name: Fix issues
             prompt: Write "not a test failure, no no no!" to ./failing-e2e-tests/fixed-tests.txt
-
 
 

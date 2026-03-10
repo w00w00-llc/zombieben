@@ -1,0 +1,16 @@
+---
+name: For Each
+description: >
+  Testing the "foreach" step type
+
+steps:
+  - name: Write file
+    prompt: >
+      Create a file ./foreach.txt. Write 5 lines into it,
+      each line with a new, randomly-generated word
+  - name: New words
+    foreach: line in ./foreach.txt
+    steps:
+      - name: Append line
+        prompt: >
+          Append "Again: {line}!" to ./foreach.txt

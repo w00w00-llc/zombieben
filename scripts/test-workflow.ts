@@ -25,9 +25,13 @@ const baseName = path.basename(workflowPath, path.extname(workflowPath));
 const todoPath = path.resolve(scriptsDir, `../tmp/${baseName}.md`);
 
 // Render workflow → TODO
-execFileSync("npx", ["tsx", path.join(scriptsDir, "render-todo.ts"), workflowPath], {
-  stdio: "inherit",
-});
+execFileSync(
+  "npx",
+  ["tsx", path.join(scriptsDir, "render-todo.ts"), workflowPath],
+  {
+    stdio: "inherit",
+  },
+);
 
 // Execute TODO
 const testTodoArgs = [
