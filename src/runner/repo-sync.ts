@@ -67,9 +67,10 @@ export async function rebaseWorktreeOntoDefaultBranch(
     await execFileAsync("git", ["rebase", `origin/${branch}`], opts);
     return;
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     throw new Error(
-      `git rebase origin/${branch} failed: ${(err as Error).message}`,
-      { cause: err as Error },
+      `git rebase origin/${branch} failed: ${message}`,
+      { cause: err },
     );
   }
 }

@@ -22,12 +22,34 @@ export class SlackSocketListener {
   private botUserId: string | null = null;
 
   constructor(appToken: string, ingestor: Ingestor) {
-    this.socketClient = new SocketModeClient({ appToken });
+    this.socketClient = new SocketModeClient({
+      appToken,
+      autoReconnectEnabled: true,
+      clientPingTimeout: 20_000,
+      serverPingTimeout: 60_000,
+      pingPongLoggingEnabled: false,
+    });
     this.ingestor = ingestor;
 
     this.socketClient.on("message", async ({ event, ack }) => {
       await ack();
       this.handleMessage(event as MessageEvent);
+    });
+    this.socketClient.on("connected", () => {
+      log.info("Slack Socket Mode connected.");
+    });
+    this.socketClient.on("reconnecting", () => {
+      log.warn("Slack Socket Mode reconnecting...");
+    });
+    this.socketClient.on("disconnected", (err?: Error) => {
+      if (err) {
+        log.warn(`Slack Socket Mode disconnected: ${err.message}`);
+      } else {
+        log.warn("Slack Socket Mode disconnected.");
+      }
+    });
+    this.socketClient.on("error", (err: Error) => {
+      log.warn(`Slack Socket Mode error: ${err.message}`);
     });
   }
 
