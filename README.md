@@ -8,6 +8,7 @@ ZombieBen is a simple tool for getting agents to run predefined workflows. It in
 - ✅ **Deterministic agent behavior**. Workflows are defined in your repo; ZombieBen's engine makes sure every step is completed
 - ✅ **Human-in-the-loop** controls. You can add approval gates to any workflow, requiring a human to approve running or continuing a workflow
 - ✅ **Context-aware workflows**. Supports integration-aware workflow steps if you need to pull context from Figma, Linear, etc
+- ✅ **Easy transition from Claude Code**. If you're a developer already using Claude Code, ZombieBen just takes your current workflow with Claude Code, and does it for you. All you need to do is set up a runner (this can just be your own machine) with the integrations it needs, and it can start running workflows.
 
 ## How It Works
 
@@ -54,6 +55,7 @@ Repo layout:
 - `.zombieben/worktrees.yml` defines how ZombieBen should create and prepare worktrees for runs.
 - `.zombieben/workflows/` is where your workflow `.yml` files live.
 - `.zombieben/rules.md` can be added to capture repo-specific guidance for agents.
+- Look in `example_workflows/` in this repo for example workflows you can copy and adapt into `.zombieben/workflows/`.
 
 ## Command Reference
 

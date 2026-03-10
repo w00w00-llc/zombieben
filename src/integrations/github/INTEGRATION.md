@@ -49,6 +49,9 @@ Notes:
 - Poll interval defaults to 30 seconds (`ZOMBIEBEN_GITHUB_POLL_INTERVAL_MS` to override).
 - Poller uses `repo-config.yml` `github_url` as source-of-truth for owner/repo.
 - If `github_url` is missing, falls back to slug inference (`owner--repo`).
+- Poller ingests:
+  - Repo events (`/repos/{owner}/{repo}/events`)
+  - Completed Actions runs (`/repos/{owner}/{repo}/actions/runs?status=completed`)
 
 Webhook and poll can run together; duplicate near-simultaneous GitHub events are suppressed with a short TTL by event/group key.
 

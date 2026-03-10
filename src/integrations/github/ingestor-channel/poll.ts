@@ -9,16 +9,18 @@ import { getIntegrationKeys } from "@/util/keys.js";
 import { ingestorDir, reposDir } from "@/util/paths.js";
 import { log } from "@/util/logger.js";
 import { GithubNoopResponder } from "../trigger-responder/index.js";
-import type { GithubRepoEvent } from "./types.js";
+import type { GithubRepoEvent, GithubWorkflowRun } from "./types.js";
 import { isGithubPollTrigger } from "./types.js";
 import {
   repoSlugToOwnerRepo,
   transformGithubPolledEvent,
+  transformGithubPolledWorkflowRun,
 } from "./transform.js";
 import { shouldSuppressGithubTrigger } from "./suppression.js";
 
 interface RepoPollState {
   lastEventId?: string;
+  lastWorkflowRunId?: number;
   etag?: string;
   updatedAt?: string;
 }
@@ -32,6 +34,11 @@ interface FetchResult {
   events: GithubRepoEvent[];
   etag?: string;
   hasNextPage: boolean;
+}
+
+interface WorkflowRunsFetchResult {
+  status: number;
+  runs: GithubWorkflowRun[];
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 30_000;
@@ -122,6 +129,13 @@ async function pollOnce(
           ingestor,
           state,
         );
+        emitted += await pollCompletedWorkflowRuns(
+          repoSlug,
+          ownerRepo,
+          token,
+          ingestor,
+          state,
+        );
       } catch (err) {
         log.error(
           `GitHub poll failed for ${repoSlug}: ${(err as Error).message}`,
@@ -205,6 +219,58 @@ async function pollRepo(
   return emitted;
 }
 
+async function pollCompletedWorkflowRuns(
+  repoSlug: string,
+  ownerRepo: string,
+  token: string,
+  ingestor: Ingestor,
+  state: PollState,
+): Promise<number> {
+  const repoState = state.repos[repoSlug] ?? {};
+  const response = await fetchCompletedWorkflowRuns(ownerRepo, token);
+  if (response.status === 304) return 0;
+
+  const newestRunId = response.runs[0]?.id;
+  if (!repoState.lastWorkflowRunId) {
+    if (typeof newestRunId === "number") {
+      state.repos[repoSlug] = {
+        ...repoState,
+        lastWorkflowRunId: newestRunId,
+        updatedAt: new Date().toISOString(),
+      };
+      log.info(
+        `GitHub poll bootstrap workflow runs for ${repoSlug}: checkpointed ${response.runs.length} run(s) at id=${newestRunId}`,
+      );
+    }
+    return 0;
+  }
+
+  const freshRuns: GithubWorkflowRun[] = [];
+  for (const run of response.runs) {
+    if (run.id === repoState.lastWorkflowRunId) break;
+    freshRuns.push(run);
+  }
+
+  let emitted = 0;
+  for (const run of freshRuns.reverse()) {
+    const trigger = transformGithubPolledWorkflowRun(repoSlug, ownerRepo, run);
+    if (shouldSuppressGithubTrigger(trigger, "workflow_run")) {
+      continue;
+    }
+    ingestor.submit(trigger);
+    emitted += 1;
+  }
+
+  if (typeof newestRunId === "number") {
+    state.repos[repoSlug] = {
+      ...state.repos[repoSlug],
+      lastWorkflowRunId: newestRunId,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  return emitted;
+}
+
 async function fetchRepoEvents(
   ownerRepo: string,
   token: string,
@@ -236,6 +302,31 @@ async function fetchRepoEvents(
     events,
     etag: res.headers.get("etag") || undefined,
     hasNextPage: link.includes('rel="next"'),
+  };
+}
+
+async function fetchCompletedWorkflowRuns(
+  ownerRepo: string,
+  token: string,
+): Promise<WorkflowRunsFetchResult> {
+  const url = `https://api.github.com/repos/${ownerRepo}/actions/runs?status=completed&per_page=100`;
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "User-Agent": "zombieben-github-poller",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`GitHub API ${res.status} workflow runs for ${ownerRepo}: ${body.slice(0, 300)}`);
+  }
+
+  const data = (await res.json()) as { workflow_runs?: GithubWorkflowRun[] };
+  return {
+    status: res.status,
+    runs: Array.isArray(data.workflow_runs) ? data.workflow_runs : [],
   };
 }
 

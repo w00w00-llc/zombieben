@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   repoSlugToOwnerRepo,
   transformGithubPolledEvent,
+  transformGithubPolledWorkflowRun,
   transformGithubWebhookEvent,
 } from "./transform.js";
 
@@ -81,5 +82,31 @@ describe("transformGithubWebhookEvent", () => {
     expect(trigger.id).toBe("github-webhook-deliv-1");
     expect(trigger.groupKeys).toContain("github:w00w00-llc/ami");
     expect(trigger.groupKeys).toContain("github:w00w00-llc/ami:pr:3850");
+  });
+});
+
+describe("transformGithubPolledWorkflowRun", () => {
+  it("builds deterministic poll trigger for completed workflow run", () => {
+    const trigger = transformGithubPolledWorkflowRun(
+      "w00w00-llc--ami",
+      "w00w00-llc/ami",
+      {
+        id: 987654,
+        name: "e2e",
+        head_branch: "zb/implement-task-123",
+        head_sha: "abc123",
+        conclusion: "failure",
+        updated_at: "2026-03-08T00:00:10Z",
+        actor: { login: "octocat" },
+        pull_requests: [{ number: 3850 }],
+      },
+    );
+
+    expect(trigger.source).toBe("github_poll");
+    expect(trigger.id).toBe("github-w00w00-llc--ami-workflow-run-987654");
+    expect(trigger.timestamp).toBe("2026-03-08T00:00:10Z");
+    expect(trigger.groupKeys).toContain("github:w00w00-llc/ami");
+    expect(trigger.groupKeys).toContain("github:w00w00-llc/ami:pr:3850");
+    expect(trigger.groupKeys).toContain("github:w00w00-llc/ami:branch:zb/implement-task-123");
   });
 });

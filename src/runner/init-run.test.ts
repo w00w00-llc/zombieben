@@ -82,6 +82,7 @@ describe("initRun", () => {
     expect(rebaseWorktreeOntoDefaultBranch).toHaveBeenCalledWith(
       "my-org--my-repo",
       result.worktreeId,
+      undefined,
     );
 
     // Check runs/{runId}/workflow_state.json
@@ -188,6 +189,7 @@ describe("initRun", () => {
     expect(rebaseWorktreeOntoDefaultBranch).toHaveBeenCalledWith(
       "my-org--my-repo",
       worktreeId,
+      undefined,
     );
 
     // Check state was written

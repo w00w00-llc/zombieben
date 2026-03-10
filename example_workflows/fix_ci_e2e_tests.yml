@@ -1,0 +1,88 @@
+---
+# Example workflow for investigating and fixing failed CI E2E test runs on an
+# existing worktree / branch.
+name: Fix CI (E2E Tests)
+description: >
+  Fix failing E2E tests when the "xctest" GitHub Actions workflow fails
+confirmation_required: false
+
+worktree:
+  action: inherit
+
+steps:
+  - name: Fix CI Failure
+    prompt: >
+      Analyze the failure in ${{ zombieben.trigger }} and determine the cause
+      of the failure.
+    required_integrations:
+      - github:
+          permissions:
+            - actions: read
+    branch:
+      - if: cause of failure is failing tests
+        steps:
+          - name: Record Failing Tests
+            prompt: >
+              Record a table of all failed tests from ${{ zombieben.trigger }} in
+              ${{ artifacts.failed-tests }}. Include two columns:
+              "Test Name" and "Status". "Status" should be set to "Pending" for
+              each test.
+          - name: Label Flaky Tests
+            foreach: test with the status "Pending" in ${{ artifacts.failed-tests }}
+            steps:
+              - name: Test for Flake
+                prompt: >
+                  Use ${{ skills.run-tests }} to run the test. If it fails twice
+                  in a row, update the status in
+                  ${{ artifacts.failed-tests }} to "Failing". If it passes at
+                  least once, update its status to "Flaky".
+          - name: Fix Failing Tests
+            foreach: test with the status "Failing" in ${{ artifacts.failed-tests }}
+            steps:
+              - name: Fix Test
+                prompt: >
+                  Fix the test. Then, run it again and verify that it passes.
+              - name: Create Commit
+                if: success
+                prompt: >
+                  Create a commit titled "Fix {test}" with a description of what
+                  the cause of the issue was and what was done to fix it.
+              - name: Update Test Status (Success)
+                if: success
+                prompt: >
+                  Update the status of the test in
+                  ${{ artifacts.failed-tests }} to "Fixed (Failing)".
+              - name: Update Test Status (Failure)
+                if: failure
+                prompt: >
+                  Update the status of the test in
+                  ${{ artifacts.failed-tests }} to "Failing (Fix Failed)".
+      - else:
+        steps:
+          - name: Fix Issues
+            prompt: >
+              Fix the issues in ${{ zombieben.trigger }}.
+            required_integrations:
+              - github:
+                  permissions:
+                    - contents: write
+
+  - name: Publish Changes
+    prompt: >
+      Commit any outstanding changes and publish the changes to the existing
+      branch associated with this worktree.
+    required_integrations:
+      - github:
+          permissions:
+            - contents: write
+
+  - name: Comment on Pull Request
+    if: always
+    prompt: >
+      Add a comment to the pull request associated with
+      ${{ zombieben.trigger }} with a summary of the changes made, and the
+      contents of ${{ artifacts.failed-tests }}.
+    required_integrations:
+      - github:
+          permissions:
+            - pull-requests: write

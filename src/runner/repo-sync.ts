@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import yaml from "js-yaml";
 import { reposDir, mainRepoDir, worktreeRepoDir } from "@/util/paths.js";
 import { log } from "@/util/logger.js";
+import type { CodingAgent } from "@/codingagents/index.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -42,6 +43,7 @@ export async function syncRepo(repoSlug: string): Promise<void> {
 export async function rebaseWorktreeOntoDefaultBranch(
   repoSlug: string,
   worktreeId: string,
+  agent?: CodingAgent,
 ): Promise<void> {
   const dir = worktreeRepoDir(repoSlug, worktreeId);
   if (!fs.existsSync(dir)) return;
@@ -49,8 +51,71 @@ export async function rebaseWorktreeOntoDefaultBranch(
   const branch = getDefaultBranch(repoSlug);
   const opts = { cwd: dir };
 
+  if (agent) {
+    await execFileAsync("git", ["fetch", "origin", branch, "--quiet"], opts);
+    await runFullRebaseWithAgent(agent, dir, branch, repoSlug, worktreeId);
+    if (await isRebaseInProgress(dir)) {
+      throw new Error(
+        `Rebase still in progress after agent-managed rebase for ${repoSlug}/${worktreeId}`,
+      );
+    }
+    return;
+  }
+
   await execFileAsync("git", ["fetch", "origin", branch, "--quiet"], opts);
-  await execFileAsync("git", ["rebase", `origin/${branch}`], opts);
+  try {
+    await execFileAsync("git", ["rebase", `origin/${branch}`], opts);
+    return;
+  } catch (err) {
+    throw new Error(
+      `git rebase origin/${branch} failed: ${(err as Error).message}`,
+      { cause: err as Error },
+    );
+  }
+}
+
+async function runFullRebaseWithAgent(
+  agent: CodingAgent,
+  cwd: string,
+  branch: string,
+  repoSlug: string,
+  worktreeId: string,
+): Promise<void> {
+  log.info(
+    `Using coding agent for full rebase of ${repoSlug}/${worktreeId} onto origin/${branch}`,
+  );
+  const prompt = [
+    `Git fetch for origin/${branch} has already completed.`,
+    `Rebase this branch onto origin/${branch}.`,
+    "",
+    "Perform the full sequence yourself:",
+    `1) git rebase origin/${branch}`,
+    "2) If there are conflicts, resolve them correctly, stage, and run git rebase --continue",
+    "3) Repeat step 2 until rebase completes",
+    "",
+    "Requirements:",
+    "- Do not abort the rebase unless it is impossible to complete safely",
+    "- Preserve intent from both sides when resolving conflicts",
+    "- At the end, ensure no rebase is in progress",
+    "- Run: git status --short",
+    "- Run: git log --oneline -n 5",
+  ].join("\n");
+
+  const handle = agent.spawn({
+    prompt,
+    readonly: false,
+    cwd,
+    outputFormat: "stream-json",
+  });
+  await handle.done;
+  if (await isRebaseInProgress(cwd)) {
+    throw new Error(
+      `Rebase still in progress after agent-managed rebase for ${repoSlug}/${worktreeId}`,
+    );
+  }
+  log.info(
+    `Agent finished full rebase for ${repoSlug}/${worktreeId}`,
+  );
 }
 
 export async function syncAllRepos(): Promise<void> {
@@ -67,4 +132,19 @@ export async function syncAllRepos(): Promise<void> {
       }),
     ),
   );
+}
+
+async function isRebaseInProgress(cwd: string): Promise<boolean> {
+  try {
+    const rebaseMerge = await gitPathExists(cwd, "rebase-merge");
+    const rebaseApply = await gitPathExists(cwd, "rebase-apply");
+    return rebaseMerge || rebaseApply;
+  } catch {
+    return false;
+  }
+}
+
+async function gitPathExists(cwd: string, gitPath: string): Promise<boolean> {
+  const { stdout } = await execFileAsync("git", ["rev-parse", "--git-path", gitPath], { cwd });
+  return fs.existsSync(stdout.trim());
 }

@@ -1,0 +1,22 @@
+---
+# Example workflow for revising an existing worktree after human review or
+# follow-up feedback.
+name: Revise Task
+description: >
+  Revise an existing worktree's implementation based on human feedback.
+
+worktree:
+  action: inherit
+
+steps:
+  - name: Revise Implementation
+    prompt: >
+      Review the feedback from ${{ zombieben.trigger }} and fix the issues.
+
+  - name: Publish Changes
+    prompt: >
+      Commit the changes and push.
+    required_integrations:
+      - github:
+          permissions:
+            - contents: write

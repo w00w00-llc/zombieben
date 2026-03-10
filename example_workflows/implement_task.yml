@@ -1,0 +1,112 @@
+---
+# High-level workflow metadata. `confirmation_required: true` means ZombieBen
+# will ask for confirmation before starting the run.
+name: Implement Task
+description: >
+  Implement a new task based on a user prompt
+confirmation_required: true
+
+# Create a fresh worktree so implementation happens in isolation.
+worktree:
+  action: create
+
+# Inputs are the values triage or a human provides when launching the workflow.
+inputs:
+  prompt:
+    description: The prompt to use for the task
+    required: true
+    type: string
+  plan_approval_required:
+    description: >
+      Whether the plan needs to be approved by a human before implementation.
+    required: true
+    type: boolean
+    default: true
+  linear_issue_id:
+    description: >
+      Optional Linear issue ID to use when the request already maps to a
+      specific ticket.
+    required: false
+    type: string
+
+steps:
+  # Pull together the problem statement and any external context into a single
+  # feature spec artifact that later steps can reference.
+  - name: Build Feature Spec
+    prompt: >
+      Given the user prompt ${{ inputs.prompt }}, and the optional Linear issue
+      ID ${{ inputs.linear_issue_id }}, fetch the relevant Linear issues and
+      Figma designs to create a feature spec in ${{ artifacts.feature-spec }}.
+      This should be a basic description of what needs to be done, and why.
+    required_integrations:
+      - linear:
+          permissions: []
+      - figma:
+          permissions: []
+
+  # Build the implementation plan and a separate verification checklist before
+  # any code changes are made.
+  - name: Create Plan
+    prompt: >
+      Enter plan mode. Reference ${{ artifacts.feature-spec }} to create two
+      files: ${{ artifacts.plan }} and ${{ artifacts.verification }}.
+      ${{ artifacts.plan }} should be a detailed plan of how to implement the
+      task, while ${{ artifacts.verification }} should be a detailed plan for
+      how to verify that the task is working as expected. Include tests which
+      need to be updated, created, deleted, and run in
+      ${{ artifacts.verification }}.
+    await_approval:
+      enabled: ${{ inputs.plan_approval_required }}
+      attachments:
+        - ${{ artifacts.plan }}
+        - ${{ artifacts.feature-spec }}
+
+  # Execute the approved plan and write or update the automated tests needed
+  # for the feature.
+  - name: Implement Feature
+    prompt: >
+      Execute the step-by-step plan in ${{ artifacts.plan }} to implement the
+      feature described in ${{ artifacts.feature-spec }}. Use
+      ${{ skills.write-tests }} to write or update tests.
+
+  # Run a separate review pass after implementation so the workflow produces a
+  # pull request that has already had a code review pass.
+  - name: Code Review
+    prompt: >
+      Launch a code review subagent to perform a holistic code review of the
+      changes made. Reference ${{ artifacts.feature-spec }} and
+      ${{ artifacts.plan }} for the desired outcome.
+
+  # Follow the explicit verification checklist created earlier and make sure
+  # every required test passes.
+  - name: Verification
+    prompt: >
+      Use ${{ skills.run-tests }} to run all of the tests in
+      ${{ artifacts.verification }} and make sure they all pass.
+
+  # Publish a pull request once implementation and verification are complete.
+  - name: Publish Pull Request
+    prompt: >
+      Use ${{ skills.format-pull-request }} to organize commits and publish a
+      pull request for this feature. Store a link to the pull request in
+      ${{ artifacts.pull-request-url }}.
+    required_integrations:
+      - github:
+          permissions:
+            - pull-requests: write
+
+  # Report the happy-path result back to the original trigger with the PR link.
+  - name: Publish Success Message
+    if: success
+    prompt: >
+      Respond to ${{ zombieben.trigger }} with a success message containing the
+      link to the pull request from ${{ artifacts.pull-request-url }}.
+
+  # Report failure details back to the original trigger and attach the
+  # workflow artifacts so a human can inspect what happened.
+  - name: Publish Failure Message
+    if: failure
+    prompt: >
+      Respond to ${{ zombieben.trigger }} with a failure message and a detailed
+      explanation of what went wrong. Attach all artifacts from this workflow
+      run.

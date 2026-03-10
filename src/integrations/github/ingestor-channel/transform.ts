@@ -1,5 +1,5 @@
 import type { Trigger } from "@/ingestor/trigger.js";
-import type { GithubRepoEvent } from "./types.js";
+import type { GithubRepoEvent, GithubWorkflowRun } from "./types.js";
 
 export function repoSlugToOwnerRepo(
   repoSlug: string,
@@ -32,6 +32,43 @@ export function transformGithubPolledEvent(
       ownerRepo: eventRepo,
       eventType: event.type,
       ...(event.actor?.login ? { actor: event.actor.login } : {}),
+    },
+  };
+}
+
+export function transformGithubPolledWorkflowRun(
+  repoSlug: string,
+  ownerRepo: string,
+  workflowRun: GithubWorkflowRun,
+): Trigger {
+  const triggerId = `github-${repoSlug}-workflow-run-${workflowRun.id}`;
+  const payload: Record<string, unknown> = {
+    workflow_run: workflowRun as unknown as Record<string, unknown>,
+  };
+  const groupKeys = new Set(buildGithubGroupKeys(ownerRepo, payload));
+  if (typeof workflowRun.head_branch === "string" && workflowRun.head_branch.trim()) {
+    groupKeys.add(`github:${ownerRepo}:branch:${workflowRun.head_branch.trim()}`);
+  }
+
+  return {
+    source: "github_poll",
+    id: triggerId,
+    groupKeys: [...groupKeys],
+    timestamp:
+      workflowRun.updated_at
+      || workflowRun.created_at
+      || new Date().toISOString(),
+    raw_payload: {
+      type: "workflow_run",
+      action: "completed",
+      repository: { full_name: ownerRepo },
+      workflow_run: workflowRun,
+    },
+    context: {
+      repoSlug,
+      ownerRepo,
+      eventType: "workflow_run",
+      ...(workflowRun.actor?.login ? { actor: workflowRun.actor.login } : {}),
     },
   };
 }
@@ -74,6 +111,16 @@ export function buildGithubGroupKeys(
 
 export function extractPrNumber(payload?: Record<string, unknown>): number | undefined {
   if (!payload || typeof payload !== "object") return undefined;
+  const workflowRun = (payload as Record<string, unknown>).workflow_run;
+  if (isRecord(workflowRun)) {
+    const prs = workflowRun.pull_requests;
+    if (Array.isArray(prs)) {
+      for (const pr of prs) {
+        const prNumber = readNumber(pr, "number");
+        if (prNumber != null) return prNumber;
+      }
+    }
+  }
   const directPr = readNumber((payload as Record<string, unknown>).pull_request, "number");
   if (directPr != null) return directPr;
   const number = readNumber(payload, "number");

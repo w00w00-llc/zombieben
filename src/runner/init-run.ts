@@ -20,6 +20,7 @@ import type { TemplateContext } from "@/engine/workflow-template.js";
 import type { WorkflowDef } from "@/engine/workflow-types.js";
 import { createTodoMarkdown } from "@/engine/todo-generator.js";
 import { validateRun } from "./validate-run.js";
+import type { CodingAgent } from "@/codingagents/index.js";
 import {
   serializeRunResponders,
   writeRunRespondersSnapshot,
@@ -54,6 +55,7 @@ export async function initRun(
   runInitRequest: RunInitRequest,
   trigger: Trigger,
   responders: readonly RoleTaggedResponder[] = [],
+  agent?: CodingAgent,
 ): Promise<InitRunResult> {
   const { repoSlug, workflowFile, inputs } = runInitRequest;
   const { workflow: parsedWorkflow, action } = validateRun(runInitRequest);
@@ -74,7 +76,7 @@ export async function initRun(
   }
 
   // Ensure worktree branch is rebased to latest default branch before any step runs.
-  await rebaseWorktreeOntoDefaultBranch(repoSlug, worktreeId);
+  await rebaseWorktreeOntoDefaultBranch(repoSlug, worktreeId, agent);
 
   const workflow = prepareWorkflowForRun(repoSlug, parsedWorkflow);
 

@@ -13,6 +13,22 @@ export interface GithubRepoEvent {
   };
 }
 
+export interface GithubWorkflowRun {
+  id: number;
+  name?: string;
+  head_branch?: string;
+  head_sha?: string;
+  conclusion?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  actor?: {
+    login?: string;
+  };
+  pull_requests?: Array<{
+    number?: number;
+  }>;
+}
+
 export type GithubPollTrigger = Trigger & {
   source: "github_poll";
   raw_payload: GithubRepoEvent;

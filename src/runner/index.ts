@@ -117,6 +117,7 @@ export class ZombieBenRunner {
               },
               trigger,
               responders,
+              this.agent,
             );
             startedRun = {
               repoSlug: retryResult.repoSlug,
@@ -153,6 +154,7 @@ export class ZombieBenRunner {
             },
             trigger,
             responders,
+            this.agent,
           );
           startedRun = {
             repoSlug: run.repoSlug,
