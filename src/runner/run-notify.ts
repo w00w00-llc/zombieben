@@ -17,8 +17,9 @@ export async function sendRunOutcome(
   run: RunRef,
   outcome: TriageOutcome,
   fallback?: TriggerResponder,
+  excludeChannelKeys: readonly string[] = [],
 ): Promise<void> {
-  const responders = loadInstantiatedResponders(run);
+  const responders = loadInstantiatedResponders(run, excludeChannelKeys);
   if (responders.length === 0) {
     await fallback?.sendOutcome(outcome);
     return;
@@ -57,10 +58,15 @@ export async function sendRunMessage(
   }
 }
 
-function loadInstantiatedResponders(run: RunRef) {
+function loadInstantiatedResponders(
+  run: RunRef,
+  excludeChannelKeys: readonly string[] = [],
+) {
   const runPath = runDir(run.repoSlug, run.worktreeId, run.runId);
   const snapshot = loadRunRespondersSnapshot(runPath);
   if (!snapshot) return [];
-  return instantiateRunResponders(snapshot);
+  const excluded = new Set(excludeChannelKeys);
+  return instantiateRunResponders(snapshot).filter(
+    (entry) => !excluded.has(entry.channelKey),
+  );
 }
-

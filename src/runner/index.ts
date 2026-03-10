@@ -15,10 +15,14 @@ import { presentOutcome } from "@/triage/present.js";
 import { applyOutcome, markRunSuperseded } from "@/triage/apply.js";
 import { syncAllRepos } from "./repo-sync.js";
 import { initRun } from "./init-run.js";
+import {
+  markCompletedReaction,
+  markFailedReaction,
+  setLoadingReaction,
+} from "./reaction-utils.js";
 import type { IngestorChannel } from "@/ingestor/ingestor-channel.js";
 import type { CodingAgent } from "@/codingagents/index.js";
 import type { Trigger } from "@/ingestor/trigger.js";
-import type { TriggerResponder } from "@/responder/responder.js";
 import type { RunInitRequest } from "./init-run.js";
 import type { WorkflowRunState } from "@/engine/workflow-run-state.js";
 import { parseWorkflow } from "@/engine/workflow-parser.js";
@@ -54,7 +58,7 @@ export class ZombieBenRunner {
         const primary = responders.find((r) => r.roles.has("primary"));
         log.info(`Triaging trigger: ${trigger.id}`);
 
-        const task = this.handleTrigger(trigger, responders, primary?.responder);
+        const task = this.handleTrigger(trigger, responders, primary);
         this.activeTriage.add(task);
         task.finally(() => this.activeTriage.delete(task));
       },
@@ -64,10 +68,10 @@ export class ZombieBenRunner {
   private async handleTrigger(
     trigger: Trigger,
     responders: readonly RoleTaggedResponder[],
-    responder?: TriggerResponder,
+    primary?: RoleTaggedResponder,
   ): Promise<void> {
-    const LOADING_EMOJI = "eyes";
-    await responder?.react(LOADING_EMOJI);
+    const responder = primary?.responder;
+    await setLoadingReaction(responder, trigger.id);
 
     try {
       await syncAllRepos();
@@ -75,7 +79,6 @@ export class ZombieBenRunner {
       log.info(
         `Triage result (${trigger.id}): ${JSON.stringify(outcome, null, 2)}`,
       );
-      await responder?.unreact(LOADING_EMOJI);
 
       if (!isRetryFreshAdjustment(outcome)) {
         applyOutcome(outcome);
@@ -86,6 +89,8 @@ export class ZombieBenRunner {
       let supersededRun: RunRef | undefined;
       let outcomeError: string | undefined;
       let outboundOutcome: TriageOutcome = outcome;
+      let retryRunInitRequest: RunInitRequest | undefined;
+      let primaryOutcomeSent = false;
 
       if (result.retryResolution) {
         try {
@@ -107,37 +112,51 @@ export class ZombieBenRunner {
               `Retry requires confirmation for workflow "${retryContext.workflowName}". Sent confirm outcome instead of starting run.`,
             );
           } else {
-            const retryResult = await initRun(
-              {
-                repoSlug: retryContext.repoSlug,
-                workflowFile: retryContext.workflowFile,
-                workflowName: retryContext.workflowName,
-                inputs: retryContext.inputs,
-                worktreeId: retryContext.worktreeId,
-              },
-              trigger,
-              responders,
-              this.agent,
-            );
-            startedRun = {
-              repoSlug: retryResult.repoSlug,
-              worktreeId: retryResult.worktreeId,
-              runId: retryResult.runId,
+            retryRunInitRequest = {
+              repoSlug: retryContext.repoSlug,
+              workflowFile: retryContext.workflowFile,
+              workflowName: retryContext.workflowName,
+              inputs: retryContext.inputs,
+              worktreeId: retryContext.worktreeId,
             };
-            supersededRun = {
-              repoSlug: result.retryResolution.repoSlug,
-              worktreeId: result.retryResolution.worktreeId,
-              runId: result.retryResolution.runId,
-            };
-            markRunSuperseded(
-              supersededRun,
-              startedRun,
-              "Superseded by fresh retry",
-            );
-            log.info(
-              `Retry initialized: ${startedRun.repoSlug}/${startedRun.worktreeId}/${startedRun.runId}`,
-            );
           }
+        } catch (err) {
+          outcomeError = `Failed to start retry: ${(err as Error).message}`;
+          log.error(outcomeError);
+        }
+      }
+
+      if (responder) {
+        await responder.sendOutcome(outboundOutcome);
+        primaryOutcomeSent = true;
+      }
+
+      if (retryRunInitRequest && result.retryResolution) {
+        try {
+          const retryResult = await initRun(
+            retryRunInitRequest,
+            trigger,
+            responders,
+            this.agent,
+          );
+          startedRun = {
+            repoSlug: retryResult.repoSlug,
+            worktreeId: retryResult.worktreeId,
+            runId: retryResult.runId,
+          };
+          supersededRun = {
+            repoSlug: result.retryResolution.repoSlug,
+            worktreeId: result.retryResolution.worktreeId,
+            runId: result.retryResolution.runId,
+          };
+          markRunSuperseded(
+            supersededRun,
+            startedRun,
+            "Superseded by fresh retry",
+          );
+          log.info(
+            `Retry initialized: ${startedRun.repoSlug}/${startedRun.worktreeId}/${startedRun.runId}`,
+          );
         } catch (err) {
           outcomeError = `Failed to start retry: ${(err as Error).message}`;
           log.error(outcomeError);
@@ -169,7 +188,12 @@ export class ZombieBenRunner {
       }
 
       if (startedRun) {
-        await sendRunOutcome(startedRun, outboundOutcome, responder);
+        await sendRunOutcome(
+          startedRun,
+          outboundOutcome,
+          primaryOutcomeSent ? undefined : responder,
+          primaryOutcomeSent && primary ? [primary.channelKey] : [],
+        );
         await sendRunMessage(
           startedRun,
           `Started run: \`${startedRun.repoSlug}/${startedRun.worktreeId}/runs/${startedRun.runId}\``,
@@ -185,20 +209,19 @@ export class ZombieBenRunner {
         if (outcomeError) {
           await sendRunMessage(startedRun, `Error: ${outcomeError}`, responder);
         }
-      } else if (responder) {
-        await responder.sendOutcome(outboundOutcome);
-        if (outcomeError) {
-          await responder.send(`Error: ${outcomeError}`);
-        }
+      } else if (outcomeError) {
+        await responder?.send(`Error: ${outcomeError}`);
       }
+
+      await markCompletedReaction(responder, trigger.id, { outcomeError });
     } catch (err) {
       log.error(
         `Triage error for ${trigger.id}: ${(err as Error).message}`,
       );
-      await responder?.unreact(LOADING_EMOJI);
       await responder?.send(
         "Something went wrong during triage.",
       );
+      await markFailedReaction(responder, trigger.id);
     }
   }
 
