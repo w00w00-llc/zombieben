@@ -68,6 +68,10 @@ export function worktreeRepoDir(repoSlug: string, worktreeId: string): string {
   return path.join(worktreeDir(repoSlug, worktreeId), "repo");
 }
 
+export function worktreeMetadataPath(repoSlug: string, worktreeId: string): string {
+  return path.join(worktreeDir(repoSlug, worktreeId), "worktree_metadata.json");
+}
+
 // --- Run paths (inside worktrees) ---
 
 export function runsDir(repoSlug: string, worktreeId: string): string {

@@ -17,6 +17,6 @@ steps:
     prompt: >
       Commit the changes and push.
     required_integrations:
-      - github:
-          permissions:
-            - contents: write
+      github:
+        permissions:
+          - contents: write

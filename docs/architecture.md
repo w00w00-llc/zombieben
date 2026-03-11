@@ -33,6 +33,12 @@ Under `~/.zombieben/repos/{repoSlug}/tasks/{worktreeId}/runs/{runId}/`:
   - `step-XXX-claude.stdout.log`
   - `step-XXX-claude.stderr.log`
 
+At the worktree root `~/.zombieben/repos/{repoSlug}/tasks/{worktreeId}/`:
+
+- `repo/`
+- `runs/`
+- `worktree_metadata.json`
+
 ## Execution Model
 
 - The runner processes runs where `workflow_state.status == "running"`.

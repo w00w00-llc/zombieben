@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseWorkflow } from "./workflow-parser.js";
+import { parseWorkflow, validateWorkflow } from "./workflow-parser.js";
 
 describe("parseWorkflow", () => {
   it("parses core workflow fields", () => {
@@ -107,5 +107,54 @@ describe("parseWorkflow", () => {
         },
       },
     });
+  });
+
+  it("accepts the worktree_metadata template namespace during validation", () => {
+    const workflow = parseWorkflow(
+      [
+        "name: Metadata Workflow",
+        "steps:",
+        "  - name: read-metadata",
+        "    prompt: Current recording is ${{ worktree_metadata.capture_screen_recordings_run_id }}",
+      ].join("\n"),
+    );
+
+    expect(validateWorkflow(workflow)).toEqual([]);
+  });
+
+  it("parses required_integrations as a map", () => {
+    const workflow = parseWorkflow(
+      [
+        "name: Integration Workflow",
+        "steps:",
+        "  - name: fetch",
+        "    prompt: Fetch issues",
+        "    required_integrations:",
+        "      github:",
+        "      linear:",
+        "        permissions: []",
+      ].join("\n"),
+    );
+
+    expect(workflow.steps[0]).toMatchObject({
+      kind: "prompt",
+      required_integrations: {
+        github: {},
+        linear: { permissions: [] },
+      },
+    });
+  });
+
+  it("rejects list-style required_integrations", () => {
+    expect(() => parseWorkflow(
+      [
+        "name: Integration Workflow",
+        "steps:",
+        "  - name: fetch",
+        "    prompt: Fetch issues",
+        "    required_integrations:",
+        "      - github:",
+      ].join("\n"),
+    )).toThrow(/required_integrations/i);
   });
 });

@@ -8,6 +8,7 @@ import {
   worktreeDir,
 } from "@/util/paths.js";
 import { readRepoConfig } from "@/util/repo-config.js";
+import { ensureWorktreeMetadataFile } from "./worktree-metadata.js";
 
 const execFile = promisify(execFileCb);
 
@@ -22,6 +23,7 @@ export async function createWorktree(
   // Create the worktree directory structure
   const wtDir = worktreeDir(repoSlug, worktreeId);
   fs.mkdirSync(wtDir, { recursive: true });
+  ensureWorktreeMetadataFile(repoSlug, worktreeId);
 
   await execFile("git", ["worktree", "add", "-b", branchName, dest], {
     cwd: mainRepoDir(repoSlug),

@@ -31,15 +31,15 @@ describe("collectRequiredIntegrations", () => {
           kind: "prompt",
           name: "step-1",
           prompt: "fetch issues",
-          required_integrations: [{ linear: { permissions: [] } }],
+          required_integrations: { linear: {} },
         },
         {
           kind: "prompt",
           name: "step-2",
           prompt: "publish PR",
-          required_integrations: [
-            { github: { permissions: [{ "pull-requests": "write" }] } },
-          ],
+          required_integrations: {
+            github: { permissions: [{ "pull-requests": "write" }] },
+          },
         },
       ],
     };
@@ -55,20 +55,20 @@ describe("collectRequiredIntegrations", () => {
           kind: "prompt",
           name: "s1",
           prompt: "a",
-          required_integrations: [{ linear: { permissions: [] } }],
+          required_integrations: { linear: {} },
         },
         {
           kind: "prompt",
           name: "s2",
           prompt: "b",
-          required_integrations: [{ linear: { permissions: [] } }],
+          required_integrations: { linear: {} },
         },
       ],
     };
     expect(collectRequiredIntegrations(workflow)).toEqual(new Set(["linear"]));
   });
 
-  it("handles steps with empty required_integrations objects", () => {
+  it("handles steps with multiple required_integrations entries", () => {
     const workflow: WorkflowDef = {
       name: "Empty",
       steps: [
@@ -76,7 +76,7 @@ describe("collectRequiredIntegrations", () => {
           kind: "prompt",
           name: "s1",
           prompt: "a",
-          required_integrations: [{ linear: { permissions: [] } }, { figma: { permissions: [] } }],
+          required_integrations: { linear: {}, figma: {} },
         },
       ],
     };

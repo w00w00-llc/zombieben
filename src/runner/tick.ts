@@ -1,6 +1,8 @@
 import fs, { globSync } from "node:fs";
 import { scanActiveRuns, type ActiveRun } from "./scanner.js";
 import { loadWorkflowFromFile } from "@/engine/workflow-loader.js";
+import { discoverWorkflowTemplateMap } from "@/engine/workflow-discovery.js";
+import { readWorktreeMetadata } from "@/engine/worktree-metadata.js";
 import {
   advanceWorkflow,
   executeWorkflowSlice,
@@ -13,6 +15,7 @@ import {
   runArtifactsDir,
   runDir as getRunDir,
   runLogPath,
+  worktreeMetadataPath,
 } from "@/util/paths.js";
 import type { TemplateContext } from "@/engine/workflow-template.js";
 import { extractArtifactNames, resolveTemplate } from "@/engine/workflow-template.js";
@@ -82,6 +85,8 @@ async function processRun(run: ActiveRun): Promise<void> {
 
   // Discover skills from worktree repo
   const skills = discoverSkills(workingDir);
+  const workflows = discoverWorkflowTemplateMap(workflowsDir);
+  const worktreeMetadata = readWorktreeMetadata(repoSlug, worktreeId);
 
   // Build template context
   const triggerPath = path.join(getRunDir(repoSlug, worktreeId, runId), "trigger.json");
@@ -89,7 +94,13 @@ async function processRun(run: ActiveRun): Promise<void> {
     inputs: state.inputs as Record<string, unknown>,
     artifacts,
     skills,
-    worktree: { id: worktreeId, path: workingDir },
+    workflows,
+    worktree_metadata: worktreeMetadata,
+    worktree: {
+      id: worktreeId,
+      path: workingDir,
+      metadata_path: worktreeMetadataPath(repoSlug, worktreeId),
+    },
     zombieben: { repo_slug: repoSlug, trigger: triggerPath },
   };
 

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { discoverWorkflowTemplateMap, type WorkflowTemplateMap } from "./workflow-discovery.js";
 import { parseWorkflow, validateWorkflow, type ValidationError } from "./workflow-parser.js";
 import { resolveTemplate, type TemplateContext } from "./workflow-template.js";
 import type {
@@ -21,6 +22,7 @@ export interface LoadWorkflowOpts {
 interface LoadWorkflowContext extends Required<Pick<LoadWorkflowOpts, "rootDir">> {
   repoDir?: string;
   stack: string[];
+  workflows: WorkflowTemplateMap;
 }
 
 export function loadWorkflowFromFile(
@@ -35,6 +37,7 @@ export function loadWorkflowFromFile(
     rootDir,
     repoDir: opts.repoDir,
     stack: [],
+    workflows: discoverWorkflowTemplateMap(rootDir),
   });
 }
 
@@ -49,7 +52,10 @@ function loadWorkflowFromFileInternal(
 
   const raw = fs.readFileSync(workflowPath, "utf-8");
   const parsed = parseWorkflow(raw);
-  const localErrors = validateWorkflow(parsed, { repoDir: ctx.repoDir });
+  const localErrors = validateWorkflow(parsed, {
+    repoDir: ctx.repoDir,
+    workflowsDir: ctx.rootDir,
+  });
   if (localErrors.length > 0) {
     throw new Error(formatValidationErrors(workflowPath, localErrors));
   }
@@ -62,7 +68,10 @@ function loadWorkflowFromFileInternal(
     ...parsed,
     steps: expandSteps(parsed.steps, workflowPath, nextCtx),
   };
-  const expandedErrors = validateWorkflow(workflow, { repoDir: ctx.repoDir });
+  const expandedErrors = validateWorkflow(workflow, {
+    repoDir: ctx.repoDir,
+    workflowsDir: ctx.rootDir,
+  });
   if (expandedErrors.length > 0) {
     throw new Error(formatValidationErrors(workflowPath, expandedErrors));
   }
@@ -127,7 +136,7 @@ function expandWorkflowCallStep(
   sourceWorkflowPath: string,
   ctx: LoadWorkflowContext,
 ): WorkflowStepDef[] {
-  const nestedPath = resolveWorkflowReference(step.workflow.name, sourceWorkflowPath, ctx.rootDir);
+  const nestedPath = resolveWorkflowReference(step.workflow.name, sourceWorkflowPath, ctx);
   const nestedWorkflow = loadWorkflowFromFileInternal(nestedPath, ctx);
   const nestedInputs = buildNestedInputContext(nestedWorkflow.inputs, step, nestedPath);
   const resolvedSteps = resolveChildInputTemplates(nestedWorkflow.steps, nestedInputs);
@@ -143,13 +152,20 @@ function expandWorkflowCallStep(
 function resolveWorkflowReference(
   reference: string,
   sourceWorkflowPath: string,
-  rootDir: string,
+  ctx: LoadWorkflowContext,
 ): string {
-  const resolved = path.resolve(path.dirname(sourceWorkflowPath), reference);
-  assertPathWithinRoot(resolved, rootDir, `Nested workflow "${reference}"`);
+  const resolvedReference = resolveTemplate(reference, { workflows: ctx.workflows });
+  if (resolvedReference.includes("${{")) {
+    throw new Error(
+      `Nested workflow reference "${reference}" in ${path.basename(sourceWorkflowPath)} could not be resolved`,
+    );
+  }
+
+  const resolved = path.resolve(path.dirname(sourceWorkflowPath), resolvedReference);
+  assertPathWithinRoot(resolved, ctx.rootDir, `Nested workflow "${resolvedReference}"`);
   if (!fs.existsSync(resolved)) {
     throw new Error(
-      `Nested workflow "${reference}" not found from ${path.basename(sourceWorkflowPath)}: ${resolved}`,
+      `Nested workflow "${resolvedReference}" not found from ${path.basename(sourceWorkflowPath)}: ${resolved}`,
     );
   }
   return resolved;

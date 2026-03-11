@@ -47,4 +47,4 @@ setIntegrationKeys("figma", { api_key: "<token>" })
 
 If no MCP server is configured, the coding agent will receive the API key as the `FIGMA_API_KEY` environment variable and can use the Figma API directly.
 
-4. Confirm the key was saved. Workflows with `required_integrations: [figma:]` will now work.
+4. Confirm the key was saved. Workflows with `required_integrations: { figma: {} }` will now work.

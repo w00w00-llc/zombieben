@@ -4,17 +4,20 @@ import yaml from "js-yaml";
 import type { Trigger } from "@/ingestor/trigger.js";
 import type { RoleTaggedResponder } from "@/responder/types.js";
 import { initWorkflowRunState } from "@/engine/workflow-runner.js";
+import { ensureWorktreeMetadataFile, readWorktreeMetadata } from "@/engine/worktree-metadata.js";
 import {
   mainRepoDir,
   worktreeRepoDir,
   runDir,
   runArtifactsDir,
   runStatePath,
+  worktreeMetadataPath,
 } from "@/util/paths.js";
 import { createWorktree } from "@/engine/worktree.js";
 import { log } from "@/util/logger.js";
 import { syncRepo, rebaseWorktreeOntoDefaultBranch } from "./repo-sync.js";
 import { prepareWorkflowForRun } from "./runtime-workflow.js";
+import { discoverWorkflowTemplateMap } from "@/engine/workflow-discovery.js";
 import { extractArtifactNames, resolveTemplate } from "@/engine/workflow-template.js";
 import type { TemplateContext } from "@/engine/workflow-template.js";
 import type { WorkflowDef, WorkflowStepDef } from "@/engine/workflow-types.js";
@@ -58,7 +61,7 @@ export async function initRun(
   agent?: CodingAgent,
 ): Promise<InitRunResult> {
   const { repoSlug, workflowFile, inputs } = runInitRequest;
-  const { workflow: parsedWorkflow, action } = validateRun(runInitRequest);
+  const { workflow: parsedWorkflow, workflowPath, action } = validateRun(runInitRequest);
 
   let worktreeId: string;
   let runId: string;
@@ -77,6 +80,7 @@ export async function initRun(
 
   // Ensure worktree branch is rebased to latest default branch before any step runs.
   await rebaseWorktreeOntoDefaultBranch(repoSlug, worktreeId, agent);
+  ensureWorktreeMetadataFile(repoSlug, worktreeId);
 
   const workflow = prepareWorkflowForRun(repoSlug, parsedWorkflow);
 
@@ -106,16 +110,21 @@ export async function initRun(
   // Pre-populate artifact paths so they resolve in workflow snapshot.
   const artifacts = buildDeterministicArtifactMap(workflow, artifactsDir);
   const skills = discoverSkills(worktreeRepoDir(repoSlug, worktreeId));
+  const workflows = discoverWorkflowTemplateMap(path.dirname(path.resolve(workflowPath)));
+  const worktreeMetadata = readWorktreeMetadata(repoSlug, worktreeId);
 
   // Persist resolved workflow snapshot for debugging.
   const resolvedWorkflow = resolveWorkflowTemplates(workflow, {
     inputs,
     artifacts,
     skills,
+    workflows,
+    worktree_metadata: worktreeMetadata,
     worktree: {
       id: worktreeId,
       slug: worktreeId,
       path: worktreeRepoDir(repoSlug, worktreeId),
+      metadata_path: worktreeMetadataPath(repoSlug, worktreeId),
     },
     zombieben: {
       repo_slug: repoSlug,

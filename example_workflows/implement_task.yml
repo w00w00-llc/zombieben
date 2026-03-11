@@ -39,10 +39,10 @@ steps:
       Figma designs to create a feature spec in ${{ artifacts.feature-spec }}.
       This should be a basic description of what needs to be done, and why.
     required_integrations:
-      - linear:
-          permissions: []
-      - figma:
-          permissions: []
+      linear:
+        permissions: []
+      figma:
+        permissions: []
 
   # Build the implementation plan and a separate verification checklist before
   # any code changes are made.
@@ -91,9 +91,9 @@ steps:
       pull request for this feature. Store a link to the pull request in
       ${{ artifacts.pull-request-url }}.
     required_integrations:
-      - github:
-          permissions:
-            - pull-requests: write
+      github:
+        permissions:
+          - pull-requests: write
 
   # Report the happy-path result back to the original trigger with the PR link.
   - name: Publish Success Message

@@ -46,7 +46,7 @@ describe("loadWorkflowFromFile", () => {
         "  - name: nested",
         "    if: The value in ./outer.txt is greater than 0.5",
         "    workflow:",
-        "      name: ./inner.yml",
+        "      name: ${{ workflows.inner }}",
         "      inputs:",
         "        number: {The value in ./outer.txt}",
       ].join("\n"),

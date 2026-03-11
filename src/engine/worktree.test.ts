@@ -67,6 +67,12 @@ describe("createWorktree", () => {
       path.join(TEST_DIR, "repos", "acme--widgets", "tasks", "wt-1", "repo"),
     );
     expect(envExistedDuringGitAdd).toBe(false);
+    expect(
+      fs.readFileSync(
+        path.join(TEST_DIR, "repos", "acme--widgets", "tasks", "wt-1", "worktree_metadata.json"),
+        "utf-8",
+      ),
+    ).toBe("{}\n");
     expect(fs.readFileSync(path.join(dest, ".env"), "utf-8")).toBe(
       "# existing\nFEATURE_FLAG=enabled\nUNCHANGED=value\n\nAPI_URL=https://api.example.com\n",
     );
@@ -92,6 +98,12 @@ describe("createWorktree", () => {
     const { createWorktree } = await import("./worktree.js");
     const dest = await createWorktree("acme--widgets", "wt-2");
 
+    expect(
+      fs.readFileSync(
+        path.join(TEST_DIR, "repos", "acme--widgets", "tasks", "wt-2", "worktree_metadata.json"),
+        "utf-8",
+      ),
+    ).toBe("{}\n");
     expect(fs.readFileSync(path.join(dest, ".env"), "utf-8")).toBe(
       "SECRET_TOKEN=abc123\n",
     );

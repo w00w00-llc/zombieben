@@ -66,7 +66,10 @@ export function registerWorkflowsValidateCommand(parent: Command): void {
               repoDir: repoRoot,
               rootDir: workflowsDir,
             });
-            const errors = validateWorkflow(workflow, { repoDir: repoRoot });
+            const errors = validateWorkflow(workflow, {
+              repoDir: repoRoot,
+              workflowsDir,
+            });
 
             if (errors.length > 0) {
               hasErrors = true;

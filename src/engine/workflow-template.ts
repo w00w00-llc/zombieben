@@ -6,6 +6,8 @@ export interface TemplateContext {
   inputs?: Record<string, unknown>;
   artifacts?: Record<string, string>;
   skills?: Record<string, string>;
+  workflows?: Record<string, unknown>;
+  worktree_metadata?: Record<string, unknown>;
   worktree?: Record<string, unknown>;
   zombieben?: Record<string, unknown>;
   responder?: TriggerResponder;

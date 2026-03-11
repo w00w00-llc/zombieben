@@ -55,7 +55,7 @@ export interface ParsedWorkflowDef extends Omit<WorkflowDef, "steps"> {
 export interface PromptStepDef extends BaseStepDef {
   kind: "prompt";
   prompt: string;
-  required_integrations?: RequiredIntegration[];
+  required_integrations?: RequiredIntegrations;
   await_approval?: AwaitApproval;
   branch?: BranchDef;
 }
@@ -101,11 +101,11 @@ export interface ElseBranch {
 
 // --- Shared step properties ---
 
-export interface RequiredIntegration {
-  [integration: string]: {
-    permissions: (string | Record<string, string>)[];
-  };
+export interface RequiredIntegrationConfig {
+  permissions?: (string | Record<string, string>)[];
 }
+
+export type RequiredIntegrations = Record<string, RequiredIntegrationConfig>;
 
 export interface AwaitApproval {
   enabled: string | boolean;

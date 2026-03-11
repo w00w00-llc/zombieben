@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
+import { discoverWorkflowTemplateMap } from "./workflow-discovery.js";
 import type {
   AwaitApproval,
   BranchDef,
@@ -10,6 +11,7 @@ import type {
   ParsedWorkflowDef,
   ParsedWorkflowStepDef,
   PromptStepDef,
+  RequiredIntegrations,
   ScriptStepDef,
   StepCondition,
   WorkflowCallStepDef,
@@ -32,6 +34,7 @@ export interface ValidationError {
 
 export interface ValidateWorkflowOpts {
   repoDir?: string;
+  workflowsDir?: string;
 }
 
 // --- Parsing ---
@@ -154,7 +157,7 @@ function parseStep(
   };
 
   if (raw.required_integrations != null) {
-    step.required_integrations = raw.required_integrations as PromptStepDef["required_integrations"];
+    step.required_integrations = parseRequiredIntegrations(raw.required_integrations, stepName);
   }
 
   if (raw.await_approval != null) {
@@ -197,6 +200,40 @@ function parseWorkflowCall(raw: unknown): WorkflowCallStepDef["workflow"] {
     name: (obj.name as string) ?? "",
     ...(inputs ? { inputs } : {}),
   };
+}
+
+function parseRequiredIntegrations(
+  raw: unknown,
+  stepName: string,
+): RequiredIntegrations {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(
+      `Step "${stepName}" has invalid "required_integrations". Expected a map like { github: {} }.`,
+    );
+  }
+
+  const out: RequiredIntegrations = {};
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (value == null) {
+      out[name] = {};
+      continue;
+    }
+
+    if (typeof value !== "object" || Array.isArray(value)) {
+      throw new Error(
+        `Step "${stepName}" has invalid integration config for "${name}". Expected an object or empty value.`,
+      );
+    }
+
+    const config = value as Record<string, unknown>;
+    out[name] = {
+      ...(Array.isArray(config.permissions)
+        ? { permissions: config.permissions as RequiredIntegrations[string]["permissions"] }
+        : {}),
+    };
+  }
+
+  return out;
 }
 
 function normalizeWorkflowInputValue(value: unknown): string | boolean | number {
@@ -367,6 +404,9 @@ function validateStep(step: ParsedWorkflowStepDef, pathName: string): Validation
       if (!step.prompt && !step.branch) {
         errors.push({ path: pathName, message: "Prompt step must have a prompt or branch" });
       }
+      if (step.required_integrations) {
+        validateRequiredIntegrations(step.required_integrations, `${pathName}.required_integrations`, errors);
+      }
       if (step.branch) {
         if (!step.branch.if.condition) {
           errors.push({
@@ -386,6 +426,28 @@ function validateStep(step: ParsedWorkflowStepDef, pathName: string): Validation
   }
 
   return errors;
+}
+
+function validateRequiredIntegrations(
+  requiredIntegrations: RequiredIntegrations,
+  pathName: string,
+  errors: ValidationError[],
+): void {
+  for (const [name, config] of Object.entries(requiredIntegrations)) {
+    if (!name.trim()) {
+      errors.push({
+        path: pathName,
+        message: "Integration names in required_integrations must not be empty",
+      });
+    }
+
+    if (config.permissions != null && !Array.isArray(config.permissions)) {
+      errors.push({
+        path: `${pathName}.${name}.permissions`,
+        message: "Integration permissions must be an array when provided",
+      });
+    }
+  }
 }
 
 function validateCondition(
@@ -429,7 +491,7 @@ export function validateWorktreesConfig(config: WorktreesConfig): ValidationErro
 
 // --- Template expression validation ---
 
-const VALID_NAMESPACES = new Set(["inputs", "artifacts", "output_artifacts", "skills", "zombieben", "worktree"]);
+const VALID_NAMESPACES = new Set(["inputs", "artifacts", "output_artifacts", "skills", "workflows", "worktree_metadata", "zombieben", "worktree"]);
 const TEMPLATE_EXPR_PATTERN = /\$\{\{\s*(\S+?)\s*\}\}/g;
 
 function validateTemplateExpressions(
@@ -438,6 +500,7 @@ function validateTemplateExpressions(
 ): ValidationError[] {
   const errors: ValidationError[] = [];
   const inputNames = new Set(workflow.inputs ? Object.keys(workflow.inputs) : []);
+  const workflows = opts?.workflowsDir ? discoverWorkflowTemplateMap(opts.workflowsDir) : undefined;
 
   function checkExpr(expr: string, stepPath: string): void {
     const dot = expr.indexOf(".");
@@ -481,6 +544,16 @@ function validateTemplateExpressions(
         errors.push({
           path: stepPath,
           message: `Skill "${key}" is referenced but no matching skill file found`,
+        });
+      }
+    }
+
+    if (ns === "workflows" && workflows) {
+      const workflowValue = getNestedValue(workflows, key);
+      if (workflowValue == null) {
+        errors.push({
+          path: stepPath,
+          message: `Workflow "${key}" is referenced but no matching workflow file was found`,
         });
       }
     }
@@ -547,4 +620,18 @@ function validateTemplateExpressions(
   }
 
   return errors;
+}
+
+function getNestedValue(obj: Record<string, unknown>, dotPath: string): unknown {
+  const parts = dotPath.split(".");
+  let current: unknown = obj;
+
+  for (const part of parts) {
+    if (current == null || typeof current !== "object") {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[part];
+  }
+
+  return current;
 }

@@ -48,7 +48,7 @@ describe("resolveIntegrationsForStep", () => {
       kind: "prompt",
       name: "s1",
       prompt: "fetch",
-      required_integrations: [{ linear: { permissions: [] } }],
+      required_integrations: { linear: {} },
     };
 
     const result = resolveIntegrationsForStep(step);
@@ -74,7 +74,7 @@ describe("resolveIntegrationsForStep", () => {
       kind: "prompt",
       name: "s1",
       prompt: "fetch",
-      required_integrations: [{ linear: { permissions: [] } }],
+      required_integrations: { linear: {} },
     };
 
     const result = resolveIntegrationsForStep(step);
@@ -91,7 +91,7 @@ describe("resolveIntegrationsForStep", () => {
       kind: "prompt",
       name: "s1",
       prompt: "fetch",
-      required_integrations: [{ linear: { permissions: [] } }],
+      required_integrations: { linear: {} },
     };
 
     const result = resolveIntegrationsForStep(step);

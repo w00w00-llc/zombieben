@@ -18,8 +18,7 @@ export function resolveIntegrationsForStep(
     return { mcpConfigs, env };
   }
 
-  for (const entry of step.required_integrations) {
-    const name = Object.keys(entry)[0];
+  for (const name of Object.keys(step.required_integrations)) {
     if (!name) continue;
 
     const keys = getIntegrationKeys(name);

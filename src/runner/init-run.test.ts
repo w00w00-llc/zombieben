@@ -8,6 +8,7 @@ import type { RunInitRequest } from "./init-run.js";
 import type { Trigger } from "@/ingestor/trigger.js";
 import { createWorktree } from "../engine/worktree.js";
 import { syncRepo, rebaseWorktreeOntoDefaultBranch } from "./repo-sync.js";
+import { worktreeMetadataPath } from "@/util/paths.js";
 
 const TEST_DIR = path.join(os.tmpdir(), "zombieben-init-run-test");
 
@@ -54,6 +55,10 @@ describe("initRun", () => {
     fs.writeFileSync(
       path.join(workflowsDir, "nested-outer.yml"),
       `name: Nested Outer\nsteps:\n  - name: generate\n    prompt: Create ./nested-outer.txt\n  - name: maybe-inline\n    if: The value in ./nested-outer.txt is greater than 0.5\n    workflow:\n      name: ./nested-inner.yml\n      inputs:\n        number: {The value in ./nested-outer.txt}\n`,
+    );
+    fs.writeFileSync(
+      path.join(workflowsDir, "worktree-metadata.yml"),
+      `name: Worktree Metadata\nworktree:\n  action: inherit\nsteps:\n  - name: summarize\n    prompt: Recording id is \${{ worktree_metadata.capture_screen_recordings_run_id }} and metadata file is \${{ worktree.metadata_path }}\n`,
     );
   });
 
@@ -157,6 +162,12 @@ describe("initRun", () => {
     const todo = fs.readFileSync(todoPath, "utf-8");
     expect(todo).toContain(`Reply via ${triggerPath}`);
     expect(todo).toContain(`Store output in ${path.join(runDir, "artifacts", "plan.md")}`);
+    expect(
+      fs.readFileSync(
+        worktreeMetadataPath("my-org--my-repo", result.worktreeId),
+        "utf-8",
+      ),
+    ).toBe("{}\n");
   });
 
   it("writes expanded nested workflow steps into the resolved snapshot and TODO", async () => {
@@ -205,6 +216,56 @@ describe("initRun", () => {
     expect(todo).toContain("Create ./nested-outer.txt");
     expect(todo).toContain(
       "Only do this if The value in ./nested-outer.txt is greater than 0.5: Write {The value in ./nested-outer.txt} to ./nested-inner.txt. Otherwise, mark this item as skipped and continue.",
+    );
+  });
+
+  it("resolves worktree metadata values from worktree_metadata.json", async () => {
+    const inheritedWorktreeId = "metadata-existing";
+    const wtDir = path.join(
+      TEST_DIR,
+      "repos",
+      "my-org--my-repo",
+      "tasks",
+      inheritedWorktreeId,
+    );
+    fs.mkdirSync(wtDir, { recursive: true });
+    fs.writeFileSync(
+      worktreeMetadataPath("my-org--my-repo", inheritedWorktreeId),
+      JSON.stringify({ capture_screen_recordings_run_id: "run-123" }, null, 2),
+    );
+
+    const triageResult: RunInitRequest = {
+      repoSlug: "my-org--my-repo",
+      workflowFile: "worktree-metadata.yml",
+      workflowName: "Worktree Metadata",
+      inputs: {},
+      worktreeId: inheritedWorktreeId,
+    };
+
+    const trigger: Trigger = {
+      source: "slack",
+      id: "slack-C123-3000.0001",
+      groupKeys: ["slack:C123:3000.0001"],
+      timestamp: new Date().toISOString(),
+      raw_payload: { text: "resolve metadata" },
+    };
+
+    const result = await initRun(triageResult, trigger);
+    const runDir = path.join(
+      TEST_DIR,
+      "repos",
+      "my-org--my-repo",
+      "tasks",
+      result.worktreeId,
+      "runs",
+      result.runId,
+    );
+    const resolvedWorkflow = yaml.load(
+      fs.readFileSync(path.join(runDir, "artifacts", "workflow.resolved.yml"), "utf-8"),
+    ) as Record<string, unknown>;
+    const steps = (resolvedWorkflow.steps ?? []) as Array<Record<string, unknown>>;
+    expect(steps[0].prompt).toBe(
+      `Recording id is run-123 and metadata file is ${worktreeMetadataPath("my-org--my-repo", inheritedWorktreeId)}`,
     );
   });
 
@@ -335,7 +396,7 @@ describe("initRun", () => {
     );
     fs.writeFileSync(
       path.join(workflowsDir, "needs-linear.yml"),
-      `name: Needs Linear\nsteps:\n  - name: fetch\n    prompt: Fetch issues\n    required_integrations:\n      - linear:\n`,
+      `name: Needs Linear\nsteps:\n  - name: fetch\n    prompt: Fetch issues\n    required_integrations:\n      linear:\n`,
     );
 
     const triageResult: RunInitRequest = {
@@ -369,7 +430,7 @@ describe("initRun", () => {
     );
     fs.writeFileSync(
       path.join(workflowsDir, "needs-linear.yml"),
-      `name: Needs Linear\nsteps:\n  - name: fetch\n    prompt: Fetch issues\n    required_integrations:\n      - linear:\n`,
+      `name: Needs Linear\nsteps:\n  - name: fetch\n    prompt: Fetch issues\n    required_integrations:\n      linear:\n`,
     );
 
     // Configure linear keys

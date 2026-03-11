@@ -39,6 +39,19 @@ Nested workflows are expanded inline during workflow loading. The parent
 workflow step does not remain as a runtime step; its condition is applied to
 the injected child steps.
 
+Workflow files are also exposed as a template namespace. A workflow file
+`capture-screen-recordings.yml` can be referenced as
+`${{ workflows.capture-screen-recordings }}`. Nested directories are exposed
+as nested objects, so `mobile/capture.yml` becomes
+`${{ workflows.mobile.capture }}`.
+
+Each worktree also has a `worktree_metadata.json` file stored alongside
+`repo/` and `runs/` under `repos/{repoSlug}/tasks/{worktreeId}/`.
+Workflow templates can read values from this file using
+`${{ worktree_metadata.some_key }}`. The current worktree metadata file path is
+available as `${{ worktree.metadata_path }}` for workflows that need to update
+the JSON file.
+
 ## Conditions
 
 Steps may use:
@@ -71,6 +84,21 @@ Behavior:
 - Invalid values default to `true` (safe behavior).
 - TODO rendering inserts a dedicated `AWAITING APPROVAL` task item.
 
+## Required Integrations
+
+Prompt steps may declare required integrations as a map keyed by integration
+name:
+
+```yaml
+required_integrations:
+  github:
+    permissions:
+      - pull-requests: write
+  linear:
+```
+
+The compact empty form like `github:` is valid.
+
 ## Runtime Preparation
 
 At run init:
@@ -84,5 +112,7 @@ Template contexts typically include:
 - `inputs.*`
 - `artifacts.*`
 - `skills.*`
+- `workflows.*`
+- `worktree_metadata.*`
 - `worktree.*`
 - `zombieben.trigger`, `zombieben.repo_slug`, `zombieben.main_repo`
