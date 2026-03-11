@@ -93,6 +93,48 @@ describe("createTodoMarkdown", () => {
     expect(todo).toContain('- [ ] For each line in ./foreach.txt, add a TODO below this item with the contents: "Append {line} to ./foreach.txt"');
   });
 
+  it("renders multi-step foreach templates with explicit sub-step summaries", () => {
+    const workflow: WorkflowDef = {
+      name: "Capture Screen Recordings",
+      steps: [
+        {
+          kind: "foreach",
+          name: "Capture screen recordings",
+          foreach: "screen recording in ${{ artifacts.plan }}",
+          parameter: "screen",
+          steps: [
+            {
+              kind: "prompt",
+              name: "Capture screen recording",
+              prompt: "Capture the flow for the screen recording",
+            },
+            {
+              kind: "prompt",
+              name: "Upload screen recording",
+              prompt: "Upload the screen recording to S3 and verify the CloudFront URL",
+            },
+            {
+              kind: "prompt",
+              name: "Remove e2e test",
+              prompt: "Delete the ad-hoc e2e test",
+            },
+          ],
+        },
+      ],
+    };
+
+    const todo = createTodoMarkdown(workflow, {
+      ...context,
+      artifacts: { ...context.artifacts, plan: "/tmp/screen-recordings-plan.md" },
+    }, 0);
+    expect(todo).toContain(
+      "- [ ] For each screen recording in /tmp/screen-recordings-plan.md, add TODO items below this item using this template:",
+    );
+    expect(todo).toContain("1. Capture screen recording: Capture the flow for the screen recording");
+    expect(todo).toContain("2. Upload screen recording: Upload the screen recording to S3 and verify the CloudFront URL");
+    expect(todo).toContain("3. Remove e2e test: Delete the ad-hoc e2e test");
+  });
+
   it("renders freeform conditions as agent-evaluable skip instructions", () => {
     const workflow: WorkflowDef = {
       name: "Conditional",

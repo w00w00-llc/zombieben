@@ -1,0 +1,72 @@
+---
+name: Capture Screen Recordings
+description: >
+  Capture screen recordings which demonstrate any updates to iOS app flows
+  or UI changes
+confirmation_required: false
+
+worktree:
+  action: inherit
+
+inputs:
+  prompt:
+    description: A description of screen recordings to capture
+    required: true
+    type: string
+  comment_on_pull_request:
+    description: >
+      Whether to comment on the pull request with a summary of the screen
+      recordings.
+    required: true
+    type: boolean
+    default: true
+
+
+steps:
+  - name: Plan screen recordings
+    prompt: >
+      Enter plan mode. Given the instructions "${{ inputs.prompt }}"", plan out
+      the screen recordings which need to be captured. Each screen recording
+      in the plan should have a description of what is being demonstrated, and
+      why it is being captured. Write this plan to
+      ${{ artifacts.screen-recordings-plan }}
+  - name: Consolidate plan
+    prompt: >
+      Each screen recording is expensive to run. Review
+      ${{ artifacts.screen-recordings-plan }} and check if any of the screen
+      recordings are redundant or can be combined into a single screen
+      recording without losing any of the things being demonstrated. Write
+      the consolidated plan to ${{ artifacts.screen-recordings-plan }}.
+  - name: Capture screen recordings
+    foreach: Screen recording in ${{ artifacts.screen-recordings-plan }}
+    steps:
+      - name: Capture screen recording
+        prompt: >
+          Use ${{ skills.write-tests }} to write an e2e test which captures
+          the flow for the screen recording. Use ${{ skills.run-tests }} to
+          run the e2e test and capture the screen recording. If the test fails
+          or does not capture the intent of the screen recording, revise your
+          implementation and try again.
+      - name: Upload screen recording
+        prompt: >
+          Upload the screen recording to S3. Verify that the object is accessible
+          from CloudFront and you have a valid CloudFront URL. Append a line to
+          the JSONL file in ${{ artifacts.screen-recordings }} with the
+           following fields:
+
+          - description: A summary of what the screen recording demonstrates
+          - why: The reason why the screen recording is being captured
+          - flow: The step-by-step flow being demonstrated
+          - cloudfront_url: The URL of the screen recording on CloudFront
+        required_integrations:
+          aws:
+      - name: Remove e2e test
+        prompt: >
+          Delete the ad-hoc e2e test which was used to capture the screen
+          recording.
+  - name: Comment on pull request
+    if: ${{ inputs.comment_on_pull_request }}
+    prompt: >
+      Comment on the pull request associated with this worktree with a summary
+      of all of the screen recordings captured. Format this as a table with a
+      row for each screen recording in ${{ artifacts.screen-recordings }}

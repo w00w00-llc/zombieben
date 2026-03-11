@@ -178,15 +178,29 @@ function renderForeachStep(
   const iterExpr = resolveTemplate(step.foreach, context).trim();
   const remainder = iterExpr.split(/\s+/).slice(1).join(" ").trim();
   const iterationSource = remainder ? ` ${remainder}` : "";
-  const itemTemplate = summarizeForeachItemTemplate(step, context);
+  const itemTemplates = summarizeForeachItemTemplates(step, context);
+
+  if (itemTemplates.length === 1) {
+    lines.push(
+      formatStepText(
+        `For each ${step.parameter}${iterationSource}, add a TODO below this item with the contents: "${itemTemplates[0]}"`,
+        step,
+        checkbox,
+      ),
+    );
+    return;
+  }
 
   lines.push(
     formatStepText(
-      `For each ${step.parameter}${iterationSource}, add a TODO below this item with the contents: "${itemTemplate}"`,
+      `For each ${step.parameter}${iterationSource}, add TODO items below this item using this template:`,
       step,
       checkbox,
     ),
   );
+  for (let i = 0; i < itemTemplates.length; i++) {
+    lines.push(`${indent}  ${i + 1}. ${itemTemplates[i]}`);
+  }
 }
 
 function formatStepText(
@@ -201,12 +215,49 @@ function formatStepText(
   return `${checkbox}Only do this if ${step.condition.ai_condition}: ${text}. Otherwise, mark this item as skipped and continue.`;
 }
 
-function summarizeForeachItemTemplate(
+function summarizeForeachItemTemplates(
   step: ForeachStepDef,
   context: TemplateContext,
-): string {
+): string[] {
   if (step.steps.length === 1 && step.steps[0].kind === "prompt") {
-    return resolveTemplate(step.steps[0].prompt, context).trim().replace(/\s+/g, " ");
+    return [resolveTemplate(step.steps[0].prompt, context).trim().replace(/\s+/g, " ")];
   }
-  return `Execute sub-steps for {${step.parameter}}`;
+  return step.steps.map((substep) => summarizeForeachTemplateStep(substep as WorkflowStepDef, context));
+}
+
+function summarizeForeachTemplateStep(
+  step: WorkflowStepDef,
+  context: TemplateContext,
+): string {
+  const conditionPrefix = summarizeConditionPrefix(step);
+
+  switch (step.kind) {
+    case "prompt": {
+      const prompt = resolveTemplate(step.prompt, context).trim().replace(/\s+/g, " ");
+      return `${conditionPrefix}${summarizeNamedTemplate(step.name, prompt)}`;
+    }
+    case "script": {
+      return `${conditionPrefix}${summarizeNamedTemplate(step.name, `Run \`${step.runs}\``)}`;
+    }
+    case "foreach": {
+      const iterExpr = resolveTemplate(step.foreach, context).trim();
+      const nestedTemplates = summarizeForeachItemTemplates(step, context).join("; ");
+      return `${conditionPrefix}${summarizeNamedTemplate(step.name, `For each ${iterExpr}: ${nestedTemplates}`)}`;
+    }
+  }
+}
+
+function summarizeConditionPrefix(step: WorkflowStepDef): string {
+  if (!step.condition) return "";
+
+  const prefixes: string[] = [];
+  if (step.condition.outcome === "failure") prefixes.push("If prior steps failed");
+  if (step.condition.outcome === "always") prefixes.push("Always");
+  if (step.condition.ai_condition) prefixes.push(`Only if ${step.condition.ai_condition}`);
+  if (prefixes.length === 0) return "";
+  return `${prefixes.join("; ")}: `;
+}
+
+function summarizeNamedTemplate(name: string, body: string): string {
+  return name ? `${name}: ${body}` : body;
 }
