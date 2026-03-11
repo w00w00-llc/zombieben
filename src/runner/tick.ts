@@ -1,6 +1,6 @@
 import fs, { globSync } from "node:fs";
 import { scanActiveRuns, type ActiveRun } from "./scanner.js";
-import { parseWorkflow } from "@/engine/workflow-parser.js";
+import { loadWorkflowFromFile } from "@/engine/workflow-loader.js";
 import {
   advanceWorkflow,
   executeWorkflowSlice,
@@ -17,7 +17,7 @@ import {
 import type { TemplateContext } from "@/engine/workflow-template.js";
 import { extractArtifactNames, resolveTemplate } from "@/engine/workflow-template.js";
 import type { CodingAgent } from "@/codingagents/index.js";
-import type { WorkflowDef } from "@/engine/workflow-types.js";
+import type { WorkflowDef, WorkflowStepDef } from "@/engine/workflow-types.js";
 import path from "node:path";
 import { log, createLogger } from "@/util/logger.js";
 import { prepareWorkflowForRun } from "./runtime-workflow.js";
@@ -61,10 +61,11 @@ async function processRun(run: ActiveRun): Promise<void> {
     return;
   }
 
-  const workflowContent = fs.readFileSync(workflowPath, "utf-8");
   const workflow = prepareWorkflowForRun(
     repoSlug,
-    parseWorkflow(workflowContent),
+    loadWorkflowFromFile(workflowPath, {
+      rootDir: workflowsDir,
+    }),
   );
 
   const workingDir = worktreeRepoDir(repoSlug, worktreeId);
@@ -153,11 +154,11 @@ function collectArtifactNamesFromStep(step: WorkflowDef["steps"][number], names:
       }
     }
     if (step.branch) {
-      for (const s of step.branch.if.steps) collectArtifactNamesFromStep(s, names);
-      for (const s of step.branch.else.steps) collectArtifactNamesFromStep(s, names);
+      for (const s of step.branch.if.steps as WorkflowStepDef[]) collectArtifactNamesFromStep(s, names);
+      for (const s of step.branch.else.steps as WorkflowStepDef[]) collectArtifactNamesFromStep(s, names);
     }
   } else if (step.kind === "foreach") {
-    for (const s of step.steps) collectArtifactNamesFromStep(s, names);
+    for (const s of step.steps as WorkflowStepDef[]) collectArtifactNamesFromStep(s, names);
   }
 }
 

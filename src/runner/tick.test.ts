@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { WorkflowRunState } from "@/engine/workflow-run-state.js";
 import {
   repoWorkflowsDir,
   runArtifactsDir,
@@ -101,7 +102,7 @@ describe("processTick awaiting approval", () => {
 
     const statePath = runStatePath(repoSlug, worktreeId, runId);
     fs.mkdirSync(path.dirname(statePath), { recursive: true });
-    const state = {
+    const state: WorkflowRunState = {
       workflow_name: "Approval Workflow",
       workflow_file: workflowFile,
       status: "running",

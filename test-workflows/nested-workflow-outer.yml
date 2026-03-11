@@ -1,0 +1,16 @@
+---
+name: Nested Workflow (Outer)
+description: Testing nested workflows
+
+steps:
+  - name: Write file
+    prompt: >
+      Create a file ./nested-workflow-outer.txt. Using bash, generate
+      a random number between 0 and 1, and write it to the file.
+  - name: Read file
+    if: The value in ./nested-workflow-outer.txt is greater than 0.5
+    workflow:
+      name: ./nested-workflow-inner.yml
+      inputs:
+        number: {The value in ./nested-workflow-outer.txt}
+

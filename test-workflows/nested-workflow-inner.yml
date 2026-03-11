@@ -1,0 +1,18 @@
+---
+name: Nested Workflow (Inner)
+description: Testing nested workflows
+
+inputs:
+  number:
+    description: The number to write to the file
+    required: true
+    type: number
+
+steps:
+  - name: Write to nested file
+    prompt: >
+      Create a file in ./nested-workflow-inner.txt. Write the value of
+      the number input to the file.
+  - name: Write again to nested file
+    prompt: >
+      Append "Again: {number}!" to ./nested-workflow-inner.txt

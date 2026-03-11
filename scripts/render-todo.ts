@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { parseWorkflow } from "../src/engine/workflow-parser.js";
+import { loadWorkflowFromFile } from "../src/engine/workflow-loader.js";
 import { createTodoMarkdown } from "../src/engine/todo-generator.js";
 import type { TemplateContext } from "../src/engine/workflow-template.js";
 
@@ -17,7 +17,9 @@ if (!workflowPath) {
   process.exit(1);
 }
 
-const workflow = parseWorkflow(fs.readFileSync(workflowPath, "utf-8"));
+const workflow = loadWorkflowFromFile(workflowPath, {
+  rootDir: path.dirname(path.resolve(workflowPath)),
+});
 
 // Stub context with placeholder values for template variables
 const context: TemplateContext = {

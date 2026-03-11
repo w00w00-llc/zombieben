@@ -41,11 +41,19 @@ describe("initRun", () => {
     fs.mkdirSync(workflowsDir, { recursive: true });
     fs.writeFileSync(
       path.join(workflowsDir, "fix-bug.yml"),
-      `name: Fix Bug\nsteps:\n  - name: do-it\n    prompt: Fix issue \${{ inputs.issue }}\n  - name: notify\n    prompt: Reply via \${{ zombieben.trigger }}\n  - name: save\n    prompt: Store output in \${{ artifacts.plan }}\n`,
+      `name: Fix Bug\ninputs:\n  issue:\n    description: Issue number\n    required: true\n    type: string\nsteps:\n  - name: do-it\n    prompt: Fix issue \${{ inputs.issue }}\n  - name: notify\n    prompt: Reply via \${{ zombieben.trigger }}\n  - name: save\n    prompt: Store output in \${{ artifacts.plan }}\n`,
     );
     fs.writeFileSync(
       path.join(workflowsDir, "followup.yml"),
       `name: Follow Up\nworktree:\n  action: inherit\n  parents:\n    - fix-bug\nsteps:\n  - name: check\n    prompt: Check the fix\n`,
+    );
+    fs.writeFileSync(
+      path.join(workflowsDir, "nested-inner.yml"),
+      `name: Nested Inner\ninputs:\n  number:\n    description: Number to write\n    required: true\n    type: number\nsteps:\n  - name: write-number\n    prompt: Write \${{ inputs.number }} to ./nested-inner.txt\n`,
+    );
+    fs.writeFileSync(
+      path.join(workflowsDir, "nested-outer.yml"),
+      `name: Nested Outer\nsteps:\n  - name: generate\n    prompt: Create ./nested-outer.txt\n  - name: maybe-inline\n    if: The value in ./nested-outer.txt is greater than 0.5\n    workflow:\n      name: ./nested-inner.yml\n      inputs:\n        number: {The value in ./nested-outer.txt}\n`,
     );
   });
 
@@ -149,6 +157,55 @@ describe("initRun", () => {
     const todo = fs.readFileSync(todoPath, "utf-8");
     expect(todo).toContain(`Reply via ${triggerPath}`);
     expect(todo).toContain(`Store output in ${path.join(runDir, "artifacts", "plan.md")}`);
+  });
+
+  it("writes expanded nested workflow steps into the resolved snapshot and TODO", async () => {
+    const triageResult: RunInitRequest = {
+      repoSlug: "my-org--my-repo",
+      workflowFile: "nested-outer.yml",
+      workflowName: "Nested Outer",
+      inputs: {},
+    };
+
+    const trigger: Trigger = {
+      source: "slack",
+      id: "slack-C123-2000.0001",
+      groupKeys: ["slack:C123:2000.0001"],
+      timestamp: new Date().toISOString(),
+      raw_payload: { text: "run nested workflow" },
+    };
+
+    const result = await initRun(triageResult, trigger);
+    const runDir = path.join(
+      TEST_DIR,
+      "repos",
+      "my-org--my-repo",
+      "tasks",
+      result.worktreeId,
+      "runs",
+      result.runId,
+    );
+
+    const resolvedWorkflowPath = path.join(runDir, "artifacts", "workflow.resolved.yml");
+    const resolvedWorkflow = yaml.load(
+      fs.readFileSync(resolvedWorkflowPath, "utf-8"),
+    ) as Record<string, unknown>;
+    const steps = (resolvedWorkflow.steps ?? []) as Array<Record<string, unknown>>;
+
+    expect(steps).toHaveLength(2);
+    expect(steps[1].kind).toBe("prompt");
+    expect(steps[1].name).toBe("write-number");
+    expect(steps[1].prompt).toBe("Write {The value in ./nested-outer.txt} to ./nested-inner.txt");
+    expect(steps[1].condition).toEqual({
+      outcome: "success",
+      ai_condition: "The value in ./nested-outer.txt is greater than 0.5",
+    });
+
+    const todo = fs.readFileSync(path.join(runDir, "artifacts", "TODO.md"), "utf-8");
+    expect(todo).toContain("Create ./nested-outer.txt");
+    expect(todo).toContain(
+      "Only do this if The value in ./nested-outer.txt is greater than 0.5: Write {The value in ./nested-outer.txt} to ./nested-inner.txt. Otherwise, mark this item as skipped and continue.",
+    );
   });
 
   it("creates a new run under existing worktree for action: inherit", async () => {

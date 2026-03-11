@@ -399,8 +399,8 @@ export async function runWorkflow(
     const step = workflow.steps[currentState.step_index];
 
     // Check conditional execution
-    if (step.if) {
-      const shouldRun = evaluateCondition(step.if, currentState);
+    if (step.condition) {
+      const shouldRun = evaluateCondition(step.condition.outcome, currentState);
       if (!shouldRun) {
         const skipResult: StepResult = {
           success: true,

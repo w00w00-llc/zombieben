@@ -2,21 +2,25 @@ import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
 import type {
-  WorkflowDef,
-  WorkflowStepDef,
-  PromptStepDef,
-  ForeachStepDef,
-  ScriptStepDef,
-  WorktreeConfig,
-  WorkflowInput,
   AwaitApproval,
   BranchDef,
-  IfBranch,
   ElseBranch,
+  ForeachStepDef,
+  IfBranch,
+  ParsedWorkflowDef,
+  ParsedWorkflowStepDef,
+  PromptStepDef,
+  ScriptStepDef,
+  StepCondition,
+  WorkflowCallStepDef,
+  WorkflowDef,
+  WorkflowInput,
+  WorkflowStepDef,
+  WorktreeConfig,
 } from "./workflow-types.js";
 import type {
-  WorktreesConfig,
   CleanupEvent,
+  WorktreesConfig,
 } from "./worktrees-config.js";
 
 // --- Validation ---
@@ -26,9 +30,13 @@ export interface ValidationError {
   message: string;
 }
 
+export interface ValidateWorkflowOpts {
+  repoDir?: string;
+}
+
 // --- Parsing ---
 
-export function parseWorkflow(yamlContent: string): WorkflowDef {
+export function parseWorkflow(yamlContent: string): ParsedWorkflowDef {
   const raw = yaml.load(yamlContent) as Record<string, unknown>;
   if (!raw || typeof raw !== "object") {
     throw new Error("Invalid workflow YAML: expected an object");
@@ -39,7 +47,19 @@ export function parseWorkflow(yamlContent: string): WorkflowDef {
     ...(raw.confirmation_required === true ? { confirmation_required: true } : {}),
     worktree: raw.worktree ? parseWorktreeConfig(raw.worktree) : undefined,
     inputs: raw.inputs ? parseInputs(raw.inputs as Record<string, unknown>) : undefined,
-    steps: parseSteps(raw.steps as unknown[]),
+    steps: parseSteps(raw.steps as unknown[], { allowWorkflowCalls: true }),
+  };
+}
+
+export function parseWorktreesConfig(yamlContent: string): WorktreesConfig {
+  const raw = yaml.load(yamlContent) as Record<string, unknown>;
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Invalid worktrees YAML: expected an object");
+  }
+
+  return {
+    setup_steps: parseExecutableSteps(raw.setup_steps as unknown[]),
+    cleanup_on: parseCleanupEvents(raw.cleanup_on as unknown[]),
   };
 }
 
@@ -65,49 +85,73 @@ function parseInputs(raw: Record<string, unknown>): Record<string, WorkflowInput
   return inputs;
 }
 
-function parseSteps(raw: unknown[]): WorkflowStepDef[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((s) => parseStep(s as Record<string, unknown>));
+function parseExecutableSteps(raw: unknown[]): WorkflowStepDef[] {
+  return parseSteps(raw, { allowWorkflowCalls: false }) as WorkflowStepDef[];
 }
 
-function parseStep(raw: Record<string, unknown>): WorkflowStepDef {
-  // Script step: has `runs` field
+function parseSteps(
+  raw: unknown[],
+  opts: { allowWorkflowCalls: boolean },
+): ParsedWorkflowStepDef[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((s) => parseStep(s as Record<string, unknown>, opts));
+}
+
+function parseStep(
+  raw: Record<string, unknown>,
+  opts: { allowWorkflowCalls: boolean },
+): ParsedWorkflowStepDef {
+  const stepName = (raw.name as string) ?? "";
+  const condition = parseCondition(raw.if);
+  const stepKinds = ["prompt", "runs", "foreach", "workflow"].filter((field) => raw[field] != null);
+  if (stepKinds.length > 1) {
+    throw new Error(
+      `Step "${stepName}" has multiple step definitions (${stepKinds.join(", ")}). Use exactly one of "prompt", "runs", "foreach", or "workflow".`,
+    );
+  }
+
+  if (raw.workflow != null) {
+    if (!opts.allowWorkflowCalls) {
+      throw new Error(
+        `Step "${stepName}" uses "workflow", which is not supported in worktrees.yml setup_steps.`,
+      );
+    }
+    return {
+      kind: "workflow",
+      name: stepName,
+      workflow: parseWorkflowCall(raw.workflow),
+      ...(condition ? { condition } : {}),
+    } satisfies WorkflowCallStepDef;
+  }
+
   if (raw.runs != null) {
     return {
       kind: "script",
-      name: (raw.name as string) ?? "",
+      name: stepName,
       runs: raw.runs as string,
-      ...(raw.if != null ? { if: raw.if as ScriptStepDef["if"] } : {}),
+      ...(condition ? { condition } : {}),
     } satisfies ScriptStepDef;
   }
 
-  // Foreach step: has `foreach` field
   if (raw.foreach != null) {
-    if (raw.prompt != null) {
-      throw new Error(
-        `Step "${raw.name ?? ""}" has both "foreach" and "prompt". Use "foreach" with "steps" instead.`,
-      );
-    }
     const foreachExpr = String(raw.foreach);
     const parameter = parseForeachParameter(foreachExpr, raw.name);
     return {
       kind: "foreach",
-      name: (raw.name as string) ?? "",
+      name: stepName,
       foreach: foreachExpr,
       parameter,
-      steps: parseSteps(raw.steps as unknown[]),
-      ...(raw.if != null ? { if: raw.if as ForeachStepDef["if"] } : {}),
+      steps: parseSteps(raw.steps as unknown[], opts),
+      ...(condition ? { condition } : {}),
     } satisfies ForeachStepDef;
   }
 
-  // Prompt step (default)
   const step: PromptStepDef = {
     kind: "prompt",
-    name: (raw.name as string) ?? "",
+    name: stepName,
     prompt: (raw.prompt as string) ?? "",
+    ...(condition ? { condition } : {}),
   };
-
-  if (raw.if != null) step.if = raw.if as PromptStepDef["if"];
 
   if (raw.required_integrations != null) {
     step.required_integrations = raw.required_integrations as PromptStepDef["required_integrations"];
@@ -122,10 +166,54 @@ function parseStep(raw: Record<string, unknown>): WorkflowStepDef {
   }
 
   if (raw.branch != null) {
-    step.branch = parseBranch(raw.branch as Record<string, unknown>[]);
+    step.branch = parseBranch(raw.branch as Record<string, unknown>[], opts);
   }
 
   return step;
+}
+
+function parseCondition(raw: unknown): StepCondition | undefined {
+  if (raw == null) return undefined;
+  const value = String(raw).trim();
+  if (!value) return undefined;
+  if (value === "success" || value === "failure" || value === "always") {
+    return { outcome: value };
+  }
+  return {
+    outcome: "success",
+    ai_condition: value,
+  };
+}
+
+function parseWorkflowCall(raw: unknown): WorkflowCallStepDef["workflow"] {
+  const obj = raw as Record<string, unknown>;
+  const inputsRaw = obj.inputs as Record<string, unknown> | undefined;
+  const inputs = inputsRaw == null
+    ? undefined
+    : Object.fromEntries(
+        Object.entries(inputsRaw).map(([key, value]) => [key, normalizeWorkflowInputValue(value)]),
+      );
+  return {
+    name: (obj.name as string) ?? "",
+    ...(inputs ? { inputs } : {}),
+  };
+}
+
+function normalizeWorkflowInputValue(value: unknown): string | boolean | number {
+  if (typeof value === "string" || typeof value === "boolean" || typeof value === "number") {
+    return value;
+  }
+
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 1 && entries[0][1] == null) {
+      return `{${entries[0][0]}}`;
+    }
+  }
+
+  throw new Error(
+    `Workflow inputs must be strings, booleans, or numbers. Wrap freeform placeholder text in quotes if needed.`,
+  );
 }
 
 function parseForeachParameter(
@@ -141,17 +229,20 @@ function parseForeachParameter(
   return match[1].toLowerCase();
 }
 
-function parseBranch(rawBranches: Record<string, unknown>[]): BranchDef {
+function parseBranch(
+  rawBranches: Record<string, unknown>[],
+  opts: { allowWorkflowCalls: boolean },
+): BranchDef {
   let ifBranch: IfBranch | undefined;
   let elseBranch: ElseBranch | undefined;
 
   for (const b of rawBranches) {
     if ("else" in b) {
-      elseBranch = { steps: parseSteps(b.steps as unknown[]) };
+      elseBranch = { steps: parseSteps(b.steps as unknown[], opts) };
     } else if (b.if != null && !ifBranch) {
       ifBranch = {
         condition: b.if as string,
-        steps: parseSteps(b.steps as unknown[]),
+        steps: parseSteps(b.steps as unknown[], opts),
       };
     }
   }
@@ -169,20 +260,6 @@ function parseBranch(rawBranches: Record<string, unknown>[]): BranchDef {
   };
 }
 
-// --- Worktrees config parsing ---
-
-export function parseWorktreesConfig(yamlContent: string): WorktreesConfig {
-  const raw = yaml.load(yamlContent) as Record<string, unknown>;
-  if (!raw || typeof raw !== "object") {
-    throw new Error("Invalid worktrees YAML: expected an object");
-  }
-
-  return {
-    setup_steps: parseSteps(raw.setup_steps as unknown[]),
-    cleanup_on: parseCleanupEvents(raw.cleanup_on as unknown[]),
-  };
-}
-
 function parseCleanupEvents(raw: unknown[]): CleanupEvent[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((e) => {
@@ -195,11 +272,10 @@ function parseCleanupEvents(raw: unknown[]): CleanupEvent[] {
 
 // --- Validation ---
 
-export interface ValidateWorkflowOpts {
-  repoDir?: string;
-}
-
-export function validateWorkflow(workflow: WorkflowDef, opts?: ValidateWorkflowOpts): ValidationError[] {
+export function validateWorkflow(
+  workflow: ParsedWorkflowDef | WorkflowDef,
+  opts?: ValidateWorkflowOpts,
+): ValidationError[] {
   const errors: ValidationError[] = [];
 
   if (!workflow.name || typeof workflow.name !== "string") {
@@ -241,77 +317,68 @@ export function validateWorkflow(workflow: WorkflowDef, opts?: ValidateWorkflowO
   return errors;
 }
 
-function validateStep(step: WorkflowStepDef, path: string): ValidationError[] {
+function validateStep(step: ParsedWorkflowStepDef, pathName: string): ValidationError[] {
   const errors: ValidationError[] = [];
+
+  validateCondition(step.condition, `${pathName}.if`, errors);
 
   switch (step.kind) {
     case "script": {
       if (!step.name) {
-        errors.push({ path, message: "Script step must have a name" });
+        errors.push({ path: pathName, message: "Script step must have a name" });
       }
       if (!step.runs) {
-        errors.push({ path, message: "Script step must have a runs command" });
-      }
-      if (step.if) {
-        const validConditions = ["success", "failure", "always"];
-        if (!validConditions.includes(step.if)) {
-          errors.push({
-            path: `${path}.if`,
-            message: `Invalid condition "${step.if}". Must be one of: ${validConditions.join(", ")}`,
-          });
-        }
+        errors.push({ path: pathName, message: "Script step must have a runs command" });
       }
       break;
     }
     case "foreach": {
       if (!step.name) {
-        errors.push({ path, message: "Foreach step must have a name" });
+        errors.push({ path: pathName, message: "Foreach step must have a name" });
       }
       if (!step.foreach) {
-        errors.push({ path, message: "Foreach step must have a foreach expression" });
+        errors.push({ path: pathName, message: "Foreach step must have a foreach expression" });
       }
       if (!step.parameter) {
-        errors.push({ path, message: "Foreach step must define a parameter" });
+        errors.push({ path: pathName, message: "Foreach step must define a parameter" });
       }
       if (!step.steps || step.steps.length === 0) {
-        errors.push({ path, message: "Foreach step must have nested steps" });
+        errors.push({ path: pathName, message: "Foreach step must have nested steps" });
       } else {
         for (let i = 0; i < step.steps.length; i++) {
-          errors.push(...validateStep(step.steps[i], `${path}.steps[${i}]`));
+          errors.push(...validateStep(step.steps[i], `${pathName}.steps[${i}]`));
         }
+      }
+      break;
+    }
+    case "workflow": {
+      if (!step.name) {
+        errors.push({ path: pathName, message: "Workflow step must have a name" });
+      }
+      if (!step.workflow.name) {
+        errors.push({ path: `${pathName}.workflow.name`, message: "Workflow step must reference a workflow name" });
       }
       break;
     }
     case "prompt": {
       if (!step.name) {
-        errors.push({ path, message: "Prompt step must have a name" });
+        errors.push({ path: pathName, message: "Prompt step must have a name" });
       }
       if (!step.prompt && !step.branch) {
-        errors.push({ path, message: "Prompt step must have a prompt or branch" });
-      }
-      if (step.if) {
-        const validConditions = ["success", "failure", "always"];
-        if (!validConditions.includes(step.if)) {
-          errors.push({
-            path: `${path}.if`,
-            message: `Invalid condition "${step.if}". Must be one of: ${validConditions.join(", ")}`,
-          });
-        }
+        errors.push({ path: pathName, message: "Prompt step must have a prompt or branch" });
       }
       if (step.branch) {
         if (!step.branch.if.condition) {
           errors.push({
-            path: `${path}.branch.if`,
+            path: `${pathName}.branch.if`,
             message: "Branch 'if' must have a condition",
           });
         }
-        // Validate if branch steps
         for (let j = 0; j < step.branch.if.steps.length; j++) {
-          errors.push(...validateStep(step.branch.if.steps[j], `${path}.branch.if.steps[${j}]`));
+          errors.push(...validateStep(step.branch.if.steps[j], `${pathName}.branch.if.steps[${j}]`));
         }
-        // Validate else branch steps
         for (let j = 0; j < step.branch.else.steps.length; j++) {
-          errors.push(...validateStep(step.branch.else.steps[j], `${path}.branch.else.steps[${j}]`));
+          errors.push(...validateStep(step.branch.else.steps[j], `${pathName}.branch.else.steps[${j}]`));
         }
       }
       break;
@@ -319,6 +386,27 @@ function validateStep(step: WorkflowStepDef, path: string): ValidationError[] {
   }
 
   return errors;
+}
+
+function validateCondition(
+  condition: StepCondition | undefined,
+  pathName: string,
+  errors: ValidationError[],
+): void {
+  if (!condition) return;
+  const validConditions = ["success", "failure", "always"];
+  if (!validConditions.includes(condition.outcome)) {
+    errors.push({
+      path: pathName,
+      message: `Invalid condition outcome "${condition.outcome}". Must be one of: ${validConditions.join(", ")}`,
+    });
+  }
+  if (condition.ai_condition != null && !condition.ai_condition.trim()) {
+    errors.push({
+      path: pathName,
+      message: "Freeform condition text must not be empty",
+    });
+  }
 }
 
 export function validateWorktreesConfig(config: WorktreesConfig): ValidationError[] {
@@ -344,7 +432,10 @@ export function validateWorktreesConfig(config: WorktreesConfig): ValidationErro
 const VALID_NAMESPACES = new Set(["inputs", "artifacts", "output_artifacts", "skills", "zombieben", "worktree"]);
 const TEMPLATE_EXPR_PATTERN = /\$\{\{\s*(\S+?)\s*\}\}/g;
 
-function validateTemplateExpressions(workflow: WorkflowDef, opts?: ValidateWorkflowOpts): ValidationError[] {
+function validateTemplateExpressions(
+  workflow: ParsedWorkflowDef | WorkflowDef,
+  opts?: ValidateWorkflowOpts,
+): ValidationError[] {
   const errors: ValidationError[] = [];
   const inputNames = new Set(workflow.inputs ? Object.keys(workflow.inputs) : []);
 
@@ -382,7 +473,9 @@ function validateTemplateExpressions(workflow: WorkflowDef, opts?: ValidateWorkf
             const name = path.basename(String(e), path.extname(String(e)));
             return name === key;
           });
-        } catch { return false; }
+        } catch {
+          return false;
+        }
       });
       if (!found) {
         errors.push({
@@ -401,15 +494,20 @@ function validateTemplateExpressions(workflow: WorkflowDef, opts?: ValidateWorkf
     }
   }
 
-  function checkStep(step: WorkflowStepDef, stepPath: string): void {
+  function checkStep(step: ParsedWorkflowStepDef, stepPath: string): void {
+    if (step.condition?.ai_condition) {
+      checkTemplate(step.condition.ai_condition, stepPath);
+    }
+
     if (step.kind === "prompt") {
       if (step.prompt) checkTemplate(step.prompt, stepPath);
       if (step.await_approval?.attachments) {
-        for (const a of step.await_approval.attachments) {
-          checkTemplate(a, stepPath);
+        for (const attachment of step.await_approval.attachments) {
+          checkTemplate(attachment, stepPath);
         }
       }
       if (step.branch) {
+        checkTemplate(step.branch.if.condition, `${stepPath}.branch.if`);
         for (let j = 0; j < step.branch.if.steps.length; j++) {
           checkStep(step.branch.if.steps[j], `${stepPath}.branch.if.steps[${j}]`);
         }
@@ -417,12 +515,28 @@ function validateTemplateExpressions(workflow: WorkflowDef, opts?: ValidateWorkf
           checkStep(step.branch.else.steps[j], `${stepPath}.branch.else.steps[${j}]`);
         }
       }
-    } else if (step.kind === "foreach") {
+      return;
+    }
+
+    if (step.kind === "foreach") {
+      checkTemplate(step.foreach, stepPath);
       for (let j = 0; j < step.steps.length; j++) {
         checkStep(step.steps[j], `${stepPath}.steps[${j}]`);
       }
-    } else if (step.kind === "script") {
+      return;
+    }
+
+    if (step.kind === "script") {
       checkTemplate(step.runs, stepPath);
+      return;
+    }
+
+    if (step.workflow.inputs) {
+      for (const [key, value] of Object.entries(step.workflow.inputs)) {
+        if (typeof value === "string") {
+          checkTemplate(value, `${stepPath}.workflow.inputs.${key}`);
+        }
+      }
     }
   }
 

@@ -3,11 +3,11 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import {
-  parseWorkflow,
   parseWorktreesConfig,
   validateWorkflow,
   validateWorktreesConfig,
 } from "@/engine/workflow-parser.js";
+import { loadWorkflowFromFile } from "@/engine/workflow-loader.js";
 import {
   collectRequiredIntegrations,
   checkRequiredIntegrations,
@@ -62,8 +62,10 @@ export function registerWorkflowsValidateCommand(parent: Command): void {
         for (const file of files) {
           const filePath = path.join(workflowsDir, file);
           try {
-            const content = fs.readFileSync(filePath, "utf-8");
-            const workflow = parseWorkflow(content);
+            const workflow = loadWorkflowFromFile(filePath, {
+              repoDir: repoRoot,
+              rootDir: workflowsDir,
+            });
             const errors = validateWorkflow(workflow, { repoDir: repoRoot });
 
             if (errors.length > 0) {

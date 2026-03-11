@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { parseWorkflow } from "@/engine/workflow-parser.js";
+import { loadWorkflowFromFile } from "@/engine/workflow-loader.js";
 import {
   collectRequiredIntegrations,
   checkRequiredIntegrations,
@@ -23,8 +23,10 @@ export function validateRun(runInitRequest: RunInitRequest): ValidateRunResult {
     throw new Error(`Workflow file not found: ${workflowPath}`);
   }
 
-  const workflowContent = fs.readFileSync(workflowPath, "utf-8");
-  const workflow = parseWorkflow(workflowContent);
+  const workflow = loadWorkflowFromFile(workflowPath, {
+    repoDir: path.resolve(repoWorkflowsDir(repoSlug), "..", ".."),
+    rootDir: repoWorkflowsDir(repoSlug),
+  });
 
   const required = collectRequiredIntegrations(workflow);
   if (required.size > 0) {

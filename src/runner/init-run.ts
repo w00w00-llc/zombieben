@@ -17,7 +17,7 @@ import { syncRepo, rebaseWorktreeOntoDefaultBranch } from "./repo-sync.js";
 import { prepareWorkflowForRun } from "./runtime-workflow.js";
 import { extractArtifactNames, resolveTemplate } from "@/engine/workflow-template.js";
 import type { TemplateContext } from "@/engine/workflow-template.js";
-import type { WorkflowDef } from "@/engine/workflow-types.js";
+import type { WorkflowDef, WorkflowStepDef } from "@/engine/workflow-types.js";
 import { createTodoMarkdown } from "@/engine/todo-generator.js";
 import { validateRun } from "./validate-run.js";
 import type { CodingAgent } from "@/codingagents/index.js";
@@ -281,11 +281,11 @@ function collectArtifactNamesFromStep(
       }
     }
     if (step.branch) {
-      for (const s of step.branch.if.steps) collectArtifactNamesFromStep(s, names);
-      for (const s of step.branch.else.steps) collectArtifactNamesFromStep(s, names);
+      for (const s of step.branch.if.steps as WorkflowStepDef[]) collectArtifactNamesFromStep(s, names);
+      for (const s of step.branch.else.steps as WorkflowStepDef[]) collectArtifactNamesFromStep(s, names);
     }
   } else if (step.kind === "foreach") {
-    for (const s of step.steps) collectArtifactNamesFromStep(s, names);
+    for (const s of step.steps as WorkflowStepDef[]) collectArtifactNamesFromStep(s, names);
   }
 }
 

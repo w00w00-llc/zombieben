@@ -25,7 +25,7 @@ import type { CodingAgent } from "@/codingagents/index.js";
 import type { Trigger } from "@/ingestor/trigger.js";
 import type { RunInitRequest } from "./init-run.js";
 import type { WorkflowRunState } from "@/engine/workflow-run-state.js";
-import { parseWorkflow } from "@/engine/workflow-parser.js";
+import { loadWorkflowFromFile } from "@/engine/workflow-loader.js";
 import type { InProgressWorkflowAdjustment, TriageOutcome } from "@/triage/types.js";
 import type { RoleTaggedResponder } from "@/responder/types.js";
 import { sendRunMessage, sendRunOutcome } from "./run-notify.js";
@@ -297,7 +297,9 @@ function buildRetryContext(
   if (!fs.existsSync(workflowPath)) {
     throw new Error(`Workflow file not found: ${workflowPath}`);
   }
-  const workflow = parseWorkflow(fs.readFileSync(workflowPath, "utf-8"));
+  const workflow = loadWorkflowFromFile(workflowPath, {
+    rootDir: repoWorkflowsDir(retryResolution.repoSlug),
+  });
   const inputs = toStringInputs(state.inputs);
   if (retryResolution.inputsOverride) {
     Object.assign(inputs, retryResolution.inputsOverride);

@@ -64,4 +64,48 @@ describe("parseWorkflow", () => {
       parameter: "line",
     });
   });
+
+  it("normalizes freeform if conditions into success-path ai conditions", () => {
+    const workflow = parseWorkflow(
+      [
+        "name: Conditional Workflow",
+        "steps:",
+        "  - name: maybe-run",
+        "    if: the generated file contains at least one error",
+        "    prompt: Fix the file",
+      ].join("\n"),
+    );
+
+    expect(workflow.steps[0]).toMatchObject({
+      kind: "prompt",
+      condition: {
+        outcome: "success",
+        ai_condition: "the generated file contains at least one error",
+      },
+    });
+  });
+
+  it("parses nested workflow steps and normalizes bare brace placeholders", () => {
+    const workflow = parseWorkflow(
+      [
+        "name: Outer",
+        "steps:",
+        "  - name: nested",
+        "    workflow:",
+        "      name: ./inner.yml",
+        "      inputs:",
+        "        number: {The value in ./outer.txt}",
+      ].join("\n"),
+    );
+
+    expect(workflow.steps[0]).toMatchObject({
+      kind: "workflow",
+      workflow: {
+        name: "./inner.yml",
+        inputs: {
+          number: "{The value in ./outer.txt}",
+        },
+      },
+    });
+  });
 });

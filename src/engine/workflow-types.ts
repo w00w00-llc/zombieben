@@ -30,37 +30,57 @@ export interface WorkflowInput {
 }
 
 // --- Steps ---
-// Discriminated union: prompt steps, foreach steps, and script steps
+// Parsed workflows may also contain nested workflow call steps before expansion.
+
+export type StepOutcomeCondition = "success" | "failure" | "always";
+
+export interface StepCondition {
+  outcome: StepOutcomeCondition;
+  ai_condition?: string;
+}
+
+export interface BaseStepDef {
+  name: string;
+  condition?: StepCondition;
+}
 
 export type WorkflowStepDef = PromptStepDef | ForeachStepDef | ScriptStepDef;
+export type ParsedWorkflowStepDef = WorkflowStepDef | WorkflowCallStepDef;
+
+export interface ParsedWorkflowDef extends Omit<WorkflowDef, "steps"> {
+  steps: ParsedWorkflowStepDef[];
+}
 
 /** A step that runs a prompt via claude -p */
-export interface PromptStepDef {
+export interface PromptStepDef extends BaseStepDef {
   kind: "prompt";
-  name: string;
   prompt: string;
-  if?: "success" | "failure" | "always";
   required_integrations?: RequiredIntegration[];
   await_approval?: AwaitApproval;
   branch?: BranchDef;
 }
 
 /** A step that iterates over a collection */
-export interface ForeachStepDef {
+export interface ForeachStepDef extends BaseStepDef {
   kind: "foreach";
-  name: string;
   foreach: string;
   parameter: string;
-  steps: WorkflowStepDef[];
-  if?: "success" | "failure" | "always";
+  steps: ParsedWorkflowStepDef[];
 }
 
 /** A step that runs a shell command */
-export interface ScriptStepDef {
+export interface ScriptStepDef extends BaseStepDef {
   kind: "script";
-  name: string;
   runs: string;
-  if?: "success" | "failure" | "always";
+}
+
+/** A parsed step that injects another workflow */
+export interface WorkflowCallStepDef extends BaseStepDef {
+  kind: "workflow";
+  workflow: {
+    name: string;
+    inputs?: Record<string, string | boolean | number>;
+  };
 }
 
 // --- Branch (if/else) ---
@@ -72,11 +92,11 @@ export interface BranchDef {
 
 export interface IfBranch {
   condition: string;
-  steps: WorkflowStepDef[];
+  steps: ParsedWorkflowStepDef[];
 }
 
 export interface ElseBranch {
-  steps: WorkflowStepDef[];
+  steps: ParsedWorkflowStepDef[];
 }
 
 // --- Shared step properties ---

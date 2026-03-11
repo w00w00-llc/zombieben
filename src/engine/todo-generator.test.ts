@@ -92,4 +92,26 @@ describe("createTodoMarkdown", () => {
     expect(todo).toContain("- [ ] Create a file ./foreach. Write 5 lines into it, each line with a new, randomly-generated word");
     expect(todo).toContain('- [ ] For each line in ./foreach.txt, add a TODO below this item with the contents: "Append {line} to ./foreach.txt"');
   });
+
+  it("renders freeform conditions as agent-evaluable skip instructions", () => {
+    const workflow: WorkflowDef = {
+      name: "Conditional",
+      steps: [
+        {
+          kind: "prompt",
+          name: "maybe-fix",
+          prompt: "Fix the generated file",
+          condition: {
+            outcome: "success",
+            ai_condition: "the generated file contains at least one error",
+          },
+        },
+      ],
+    };
+
+    const todo = createTodoMarkdown(workflow, context, 0);
+    expect(todo).toContain(
+      "Only do this if the generated file contains at least one error: Fix the generated file. Otherwise, mark this item as skipped and continue.",
+    );
+  });
 });

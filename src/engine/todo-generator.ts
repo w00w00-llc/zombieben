@@ -86,7 +86,7 @@ function hasCondition(
   step: WorkflowStepDef,
   condition: string,
 ): boolean {
-  return step.if === condition;
+  return step.condition?.outcome === condition;
 }
 
 function renderStep(
@@ -100,7 +100,7 @@ function renderStep(
 
   switch (step.kind) {
     case "script":
-      lines.push(`${checkbox}Run: \`${step.runs}\``);
+      lines.push(formatStepText(`Run: \`${step.runs}\``, step, checkbox));
       break;
 
     case "prompt":
@@ -131,25 +131,27 @@ function renderPromptStep(
 
     // The parent step asks the agent to evaluate and pick a branch
     const elseLabel = branch.else.steps.length > 0 ? "Otherwise" : "";
-    lines.push(
-      `${checkbox}${prompt}. If ${branchCondition}, mark "${elseLabel}" and all sub-steps as skipped, then continue with "${branchCondition}". Otherwise, mark "${branchCondition}" and all sub-steps as skipped, then continue with "${elseLabel}".`,
-    );
+    lines.push(formatStepText(
+      `${prompt}. If ${branchCondition}, mark "${elseLabel}" and all sub-steps as skipped, then continue with "${branchCondition}". Otherwise, mark "${branchCondition}" and all sub-steps as skipped, then continue with "${elseLabel}".`,
+      step,
+      checkbox,
+    ));
 
     // If branch
     lines.push(`${indent}  - [ ] ${branchCondition}`);
-    for (const sub of branch.if.steps) {
+    for (const sub of branch.if.steps as WorkflowStepDef[]) {
       renderStep(sub, context, lines, depth + 2);
     }
 
     // Else branch
     if (branch.else.steps.length > 0) {
       lines.push(`${indent}  - [ ] Otherwise`);
-      for (const sub of branch.else.steps) {
+      for (const sub of branch.else.steps as WorkflowStepDef[]) {
         renderStep(sub, context, lines, depth + 2);
       }
     }
   } else {
-    lines.push(`${checkbox}${prompt}`);
+    lines.push(formatStepText(prompt, step, checkbox));
   }
 
   if (shouldAwaitApprovalForPrompt(step, context)) {
@@ -179,8 +181,24 @@ function renderForeachStep(
   const itemTemplate = summarizeForeachItemTemplate(step, context);
 
   lines.push(
-    `${checkbox}For each ${step.parameter}${iterationSource}, add a TODO below this item with the contents: "${itemTemplate}"`,
+    formatStepText(
+      `For each ${step.parameter}${iterationSource}, add a TODO below this item with the contents: "${itemTemplate}"`,
+      step,
+      checkbox,
+    ),
   );
+}
+
+function formatStepText(
+  text: string,
+  step: WorkflowStepDef,
+  checkbox: string,
+): string {
+  if (!step.condition?.ai_condition) {
+    return `${checkbox}${text}`;
+  }
+
+  return `${checkbox}Only do this if ${step.condition.ai_condition}: ${text}. Otherwise, mark this item as skipped and continue.`;
 }
 
 function summarizeForeachItemTemplate(

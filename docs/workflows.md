@@ -21,7 +21,37 @@ Notes:
 
 - Prompt step (`prompt`)
 - Script step (`runs`)
-- For-loop step (`for` + nested `steps`)
+- For-loop step (`foreach` + nested `steps`)
+- Nested workflow step (`workflow.name` + optional `workflow.inputs`)
+
+Example nested workflow step:
+
+```yaml
+- name: Maybe inline nested workflow
+  if: The value in ./outer.txt is greater than 0.5
+  workflow:
+    name: ./nested-inner.yml
+    inputs:
+      number: "{The value in ./outer.txt}"
+```
+
+Nested workflows are expanded inline during workflow loading. The parent
+workflow step does not remain as a runtime step; its condition is applied to
+the injected child steps.
+
+## Conditions
+
+Steps may use:
+
+- `if: success`
+- `if: failure`
+- `if: always`
+- `if: <freeform text>`
+
+Freeform `if` values are treated as success-path steps plus an additional
+agent-evaluable condition. In TODO rendering, the agent is instructed to
+execute the step only if the freeform condition is true; otherwise it should
+mark the item skipped and continue.
 
 ## Approval Gates
 
