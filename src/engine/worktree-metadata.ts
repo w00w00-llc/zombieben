@@ -30,6 +30,7 @@ export function readWorktreeMetadata(
   } catch (err) {
     throw new Error(
       `Invalid worktree metadata JSON at ${metadataPath}: ${(err as Error).message}`,
+      { cause: err },
     );
   }
 
