@@ -98,4 +98,36 @@ describe("resolveIntegrationsForStep", () => {
     expect(result.mcpConfigs).toEqual({});
     expect(result.env.LINEAR_API_KEY).toBe("lin_test_123");
   });
+
+  it("injects built-in aws env vars from configured aws keys", () => {
+    fs.writeFileSync(
+      path.join(TEST_DIR, "keys.json"),
+      JSON.stringify({
+        aws: {
+          access_key_id: "AKIA123",
+          secret_access_key: "secret123",
+          region: "us-east-1",
+          cloudfront_distribution_url: "https://d111111abcdef8.cloudfront.net",
+          bucket_name: "my-bucket",
+        },
+      }),
+    );
+
+    const step: PromptStepDef = {
+      kind: "prompt",
+      name: "deploy",
+      prompt: "Deploy assets",
+      required_integrations: { aws: {} },
+    };
+
+    const result = resolveIntegrationsForStep(step);
+    expect(result.mcpConfigs).toEqual({});
+    expect(result.env).toEqual({
+      AWS_ACCESS_KEY_ID: "AKIA123",
+      AWS_SECRET_ACCESS_KEY: "secret123",
+      AWS_REGION: "us-east-1",
+      AWS_CLOUDFRONT_DISTRIBUTION_URL: "https://d111111abcdef8.cloudfront.net",
+      AWS_BUCKET_NAME: "my-bucket",
+    });
+  });
 });

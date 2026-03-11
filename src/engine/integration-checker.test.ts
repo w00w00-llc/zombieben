@@ -121,6 +121,34 @@ describe("checkRequiredIntegrations", () => {
     expect(result.missing).toEqual(["linear"]);
   });
 
+  it("returns missing aws when required aws keys are incomplete", () => {
+    fs.writeFileSync(
+      path.join(TEST_DIR, "keys.json"),
+      JSON.stringify({ aws: { access_key_id: "AKIA...", region: "us-east-1" } }),
+    );
+    const result = checkRequiredIntegrations(new Set(["aws"]));
+    expect(result.ok).toBe(false);
+    expect(result.missing).toEqual(["aws"]);
+  });
+
+  it("returns ok for aws when all required aws keys are configured", () => {
+    fs.writeFileSync(
+      path.join(TEST_DIR, "keys.json"),
+      JSON.stringify({
+        aws: {
+          access_key_id: "AKIA...",
+          secret_access_key: "secret",
+          region: "us-east-1",
+          cloudfront_distribution_url: "https://d111111abcdef8.cloudfront.net",
+          bucket_name: "my-bucket",
+        },
+      }),
+    );
+    const result = checkRequiredIntegrations(new Set(["aws"]));
+    expect(result.ok).toBe(true);
+    expect(result.missing).toEqual([]);
+  });
+
   it("returns ok for empty required set", () => {
     const result = checkRequiredIntegrations(new Set());
     expect(result.ok).toBe(true);

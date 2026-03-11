@@ -44,6 +44,25 @@ describe("integrations-config", () => {
       expect(getIntegrationConfig("linear")).toBeUndefined();
     });
 
+    it("returns built-in config for aws", () => {
+      const config = getIntegrationConfig("aws");
+      expect(config).toBeDefined();
+      expect(config!.env).toMatchObject({
+        AWS_ACCESS_KEY_ID: "$access_key_id",
+        AWS_SECRET_ACCESS_KEY: "$secret_access_key",
+        AWS_REGION: "$region",
+        AWS_CLOUDFRONT_DISTRIBUTION_URL: "$cloudfront_distribution_url",
+        AWS_BUCKET_NAME: "$bucket_name",
+      });
+      expect(config!.required_keys).toEqual([
+        "access_key_id",
+        "secret_access_key",
+        "region",
+        "cloudfront_distribution_url",
+        "bucket_name",
+      ]);
+    });
+
     it("returns config for configured integration", () => {
       fs.writeFileSync(
         path.join(TEST_DIR, "integrations.json"),
@@ -54,6 +73,23 @@ describe("integrations-config", () => {
       const config = getIntegrationConfig("linear");
       expect(config).toBeDefined();
       expect(config!.env_var).toBe("LINEAR_API_KEY");
+    });
+
+    it("merges configured integration fields with aws defaults", () => {
+      fs.writeFileSync(
+        path.join(TEST_DIR, "integrations.json"),
+        JSON.stringify({
+          aws: {
+            env: { AWS_BUCKET_NAME: "$custom_bucket" },
+          },
+        }),
+      );
+
+      const config = getIntegrationConfig("aws");
+      expect(config!.env).toMatchObject({
+        AWS_ACCESS_KEY_ID: "$access_key_id",
+        AWS_BUCKET_NAME: "$custom_bucket",
+      });
     });
   });
 });

@@ -14,6 +14,7 @@ Integrations are external services that plug into ZombieBen's architecture. Each
 | GitHub      | ✓        |               | ✓                |
 | Linear      |          |               | ✓                |
 | Figma       |          |               | ✓                |
+| AWS         |          |               | ✓                |
 
 ## Directory conventions
 

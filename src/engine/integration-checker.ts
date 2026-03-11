@@ -1,5 +1,6 @@
 import type { WorkflowDef } from "./workflow-types.js";
 import { readKeys } from "@/util/keys.js";
+import { getIntegrationConfig } from "@/util/integrations-config.js";
 
 export function collectRequiredIntegrations(workflow: WorkflowDef): Set<string> {
   const integrations = new Set<string>();
@@ -29,7 +30,16 @@ export function checkRequiredIntegrations(
 
   for (const name of required) {
     const entry = keys[name];
-    if (!entry || Object.keys(entry).length === 0) {
+    const config = getIntegrationConfig(name);
+    const requiredKeys = config?.required_keys ?? [];
+    const hasRequiredKeys = requiredKeys.length === 0
+      ? !!entry && Object.keys(entry).length > 0
+      : requiredKeys.every((key) => {
+          const value = entry?.[key];
+          return typeof value === "string" && value.trim() !== "";
+        });
+
+    if (!hasRequiredKeys) {
       missing.push(name);
     }
   }

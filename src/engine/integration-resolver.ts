@@ -24,6 +24,17 @@ export function resolveIntegrationsForStep(
     const keys = getIntegrationKeys(name);
     const config = getIntegrationConfig(name);
 
+    // General env mapping: supports integrations with multiple credentials/settings.
+    if (config?.env && keys) {
+      for (const [envKey, envVal] of Object.entries(config.env)) {
+        if (envVal.startsWith("$") && keys[envVal.slice(1)]) {
+          env[envKey] = keys[envVal.slice(1)];
+        } else {
+          env[envKey] = envVal;
+        }
+      }
+    }
+
     // Env var fallback: always set if we have an api_key
     if (keys?.api_key) {
       const envVar = config?.env_var ?? `${name.toUpperCase()}_API_KEY`;
