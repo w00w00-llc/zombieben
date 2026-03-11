@@ -43,5 +43,5 @@ At the worktree root `~/.zombieben/repos/{repoSlug}/tasks/{worktreeId}/`:
 
 - The runner processes runs where `workflow_state.status == "running"`.
 - A slice execution may complete multiple TODO items in one agent session.
-- If TODO main section is fully complete, run is marked completed.
+- If TODO main section is fully complete, the agent must write `artifacts/intent-review.md`, stop immediately, and the run is marked completed.
 - Approval gates can transition a run to `awaiting_approval`.

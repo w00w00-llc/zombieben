@@ -14,4 +14,10 @@ describe("EXECUTE_TODOS_SYSTEM_PROMPT", () => {
     expect(EXECUTE_TODOS_SYSTEM_PROMPT).toContain("intent-review.md");
     expect(EXECUTE_TODOS_SYSTEM_PROMPT).toContain("### Deviations");
   });
+
+  it("requires stopping immediately after completing the checklist", () => {
+    expect(EXECUTE_TODOS_SYSTEM_PROMPT).toContain(
+      "After writing `intent-review.md`, stop immediately and exit successfully without doing any more work, exploration, or cleanup",
+    );
+  });
 });

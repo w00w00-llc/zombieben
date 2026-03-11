@@ -93,7 +93,7 @@ export async function executeWorkflowSlice(
       prompt: [
         `Execute the steps in ${todoPath}`,
         `Use run intent file: ${userIntentPath}`,
-        `When main tasks are complete, write intent review to: ${intentReviewPath}`,
+        `When main tasks are complete, write intent review to: ${intentReviewPath}, then stop immediately and exit successfully without doing any more work.`,
       ].join("\n"),
       systemPrompt: EXECUTE_TODOS_SYSTEM_PROMPT,
       readonly: false,

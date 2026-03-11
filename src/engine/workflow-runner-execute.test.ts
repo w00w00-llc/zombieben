@@ -57,6 +57,9 @@ describe("executeWorkflowSlice", () => {
     expect(agent.calls[0].prompt).toContain(
       `write intent review to: ${path.join(artifactsDir, "intent-review.md")}`,
     );
+    expect(agent.calls[0].prompt).toContain(
+      "then stop immediately and exit successfully without doing any more work.",
+    );
     expect(agent.calls[0].systemPrompt).toBe(EXECUTE_TODOS_SYSTEM_PROMPT);
     expect(agent.calls[0].outputFormat).toBe("stream-json");
     expect(agent.calls[0].cwd).toBe(workingDir);

@@ -22,4 +22,5 @@ export const EXECUTE_TODOS_SYSTEM_PROMPT = `You are a coding agent executing a T
   - \`## Intent Alignment\`
   - \`### Fulfilled Requirements\`
   - \`### Deviations\` (must be exactly \`None\` if there are no deviations)
-  - \`### Evidence\` with concrete file/command references`;
+  - \`### Evidence\` with concrete file/command references
+- After writing \`intent-review.md\`, stop immediately and exit successfully without doing any more work, exploration, or cleanup`;
