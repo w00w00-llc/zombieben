@@ -1,6 +1,6 @@
 {
   "name": "@w00w00/zombieben",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "CLI tool for zombieben workflows",
   "license": "MIT",
   "author": "Philip Shen <philipshen13@gmail.com>",
