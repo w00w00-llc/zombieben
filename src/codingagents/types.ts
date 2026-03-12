@@ -19,6 +19,7 @@ export interface SpawnOptions {
   env?: Record<string, string>;
   stdoutLogPath?: string;
   stderrLogPath?: string;
+  timeoutMs?: number;
 }
 
 export interface McpSpawnConfig {

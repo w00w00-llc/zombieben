@@ -158,16 +158,25 @@ export class CodexCodingAgent implements CodingAgent {
     }
 
     let killed = false;
+    let timedOut = false;
     const kill = () => {
       if (killed) return;
       killed = true;
       child.kill("SIGTERM");
     };
 
+    const timeoutMs = options.timeoutMs ?? 2 * 60 * 60 * 1000; // 2 hours
+
     const done = new Promise<{ stdout: string; stderr: string }>(
       (resolve, reject) => {
         const stdoutChunks: Buffer[] = [];
         let stderrText = "";
+
+        const timer = setTimeout(() => {
+          timedOut = true;
+          options.log?.warn(`Agent process timed out after ${timeoutMs}ms, killing`);
+          kill();
+        }, timeoutMs);
 
         child.stdin!.write(prompt);
         child.stdin!.end();
@@ -183,15 +192,22 @@ export class CodexCodingAgent implements CodingAgent {
         });
 
         child.on("error", (err) => {
+          clearTimeout(timer);
           stdoutStream.end();
           stderrStream.end();
           reject(new Error(`${this.command} process error: ${err.message}`));
         });
 
-        child.on("close", (code) => {
+        child.on("exit", (code) => {
+          clearTimeout(timer);
           stdoutStream.end();
           stderrStream.end();
           const stdout = Buffer.concat(stdoutChunks).toString();
+
+          if (timedOut) {
+            reject(new Error(`${this.command} process timed out after ${timeoutMs}ms`));
+            return;
+          }
 
           if (killed) {
             reject(new Error("Process was killed"));
